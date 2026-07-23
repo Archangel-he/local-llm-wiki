@@ -1,0 +1,19 @@
+# local-llm-wiki Caddy configuration
+# MVP 0: serves static frontend + reverse proxy to FastAPI
+
+:8000 {
+    # Health check endpoint - proxy to API
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    # Serve frontend static assets
+    root * /usr/share/caddy
+    file_server
+
+    # SPA fallback: serve index.html for unrecognized paths
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+}

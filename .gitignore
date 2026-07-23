@@ -1,10 +1,19 @@
 .understand-anything/
 
-frontend/node_modules/
-frontend/dist/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.env
+*.env.local
+*.env.*.local
+dist/
+node_modules/
 frontend/playwright-report/
 frontend/test-results/
 frontend/coverage/
-frontend/.env
-frontend/.env.local
-frontend/.env.*.local
+.DS_Store
+*.log
+*.db
+storage/
+*.sqlite3
