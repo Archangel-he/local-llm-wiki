@@ -23,7 +23,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready -U wiki
+          --health-cmd "pg_isready -U wiki"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 5
@@ -97,7 +97,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Build frontend
         working-directory: ./frontend
