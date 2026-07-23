@@ -8,6 +8,7 @@
 - 每个事实尽量有 Source 级引用；
 - 新来源不能静默覆盖旧结论；
 - 模型生成内容默认可追溯、可回滚、可 Lint。
+- Ollama 与外部 API 必须产生相同的结构化协议，切换 Provider 不降低 Schema、引用或事务校验。
 
 ## 页面类型
 
@@ -155,6 +156,7 @@ Worker 向模型提供：
 
 ```text
 Workspace Schema
+Model Profile 的非秘密能力信息
 Source 元数据
 解析后的来源文本
 相关现有 Wiki 页面及 revision_no

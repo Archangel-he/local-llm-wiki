@@ -29,6 +29,82 @@ GET  /api/auth/me
 - 改变密码或权限后轮换 Session；
 - 写操作使用 SameSite 与 CSRF 防护组合。
 
+## Model Profile
+
+MVP 1 支持两类 Provider：
+
+```text
+ollama
+openai_compatible
+```
+
+MVP 1 由 default user 配置 Workspace 写入 Profile；MVP 2 启用 personal Query 默认和逐次选择；MVP 3 再启用真实用户之间的作用域隔离。
+
+个人 Query Profile：
+
+```http
+GET    /api/model-profiles
+POST   /api/model-profiles
+PATCH  /api/model-profiles/{profile_id}
+DELETE /api/model-profiles/{profile_id}
+POST   /api/model-profiles/{profile_id}/test
+PUT    /api/me/model-preference
+```
+
+Workspace 写入 Profile：
+
+```http
+GET   /api/workspaces/{workspace_id}/model-profiles
+POST  /api/workspaces/{workspace_id}/model-profiles
+PATCH /api/workspaces/{workspace_id}/model-profiles/{profile_id}
+DELETE /api/workspaces/{workspace_id}/model-profiles/{profile_id}
+POST  /api/workspaces/{workspace_id}/model-profiles/{profile_id}/test
+PUT   /api/workspaces/{workspace_id}/model-policy
+```
+
+创建 OpenAI-compatible Profile：
+
+```json
+{
+  "display_name": "My API",
+  "provider": "openai_compatible",
+  "base_url": "https://llm.example.com/v1",
+  "model_name": "example-model",
+  "api_key": "WRITE_ONLY_SECRET"
+}
+```
+
+Ollama 使用相同结构，但 `provider=ollama`，默认本地地址由服务端预设，`api_key` 可为空。官方 Ollama API 默认监听 `http://localhost:11434/api`；容器内 Profile 使用宿主机可达地址，由 adapter 追加具体 API 路径。
+
+读取响应只返回：
+
+```json
+{
+  "id": "PROFILE_ID",
+  "scope": "personal",
+  "display_name": "My API",
+  "provider": "openai_compatible",
+  "endpoint_origin": "https://llm.example.com",
+  "model_name": "example-model",
+  "has_credential": true,
+  "status": "active",
+  "last_tested_at": "2026-07-23T08:00:00Z"
+}
+```
+
+安全约定：
+
+- `api_key` 是 write-only，创建或替换后永不回显；
+- Test 由后端发起，只返回能力、延迟和脱敏错误，不返回上游响应头或凭据；
+- Local 默认允许预设 Ollama 地址；生产自定义 API 默认要求 HTTPS 公网地址；
+- 私网 Endpoint 只能由部署管理员加入 allowlist，且仍需 Workspace Owner 配置；
+- DNS 解析结果、重定向目标和每次连接都必须经过 SSRF 检查；
+- Base URL 不允许携带 userinfo、API Key query parameter 或 fragment；凭据只能进入 write-only `api_key` 字段；
+- personal Profile 只有所有者可见可用；Workspace Profile 只有 Owner 可修改，成员只看脱敏元数据；
+- 配置外部 API 时 UI 必须提示：任务所需的来源/Wiki 片段会发送到该服务。
+
+`PUT /api/me/model-preference` 设置个人 Query 默认 Profile。`PUT .../model-policy` 设置 Workspace 默认写入 Profile；启用身份后只有 Owner 可以调用。
+
 ## 错误格式
 
 ```json
@@ -59,6 +135,10 @@ JOB_ALREADY_EXISTS
 JOB_NOT_CANCELLABLE
 REVISION_CONFLICT
 LLM_UNAVAILABLE
+MODEL_PROFILE_REQUIRED
+MODEL_PROFILE_INVALID
+MODEL_PROFILE_FORBIDDEN
+MODEL_ENDPOINT_BLOCKED
 SCHEMA_VALIDATION_FAILED
 ALIAS_CONFLICT
 SCHEMA_VERSION_CONFLICT
@@ -87,6 +167,8 @@ GET /api/health
 ```
 
 LLM 不可用时返回 200 + degraded，应用仍可浏览已有 Wiki。
+
+这里的 `llm` 只表示启动时的默认 Ollama/Workspace Profile 状态，不主动探测所有用户的外部 API。每个 Profile 的实时状态通过 Model Profile Test 获取。
 
 ## Workspace
 
@@ -128,7 +210,8 @@ HTTP/1.1 202 Accepted
   },
   "job": {
     "id": "JOB_ID",
-    "status": "queued"
+    "status": "queued",
+    "model_profile_id": "WORKSPACE_DEFAULT_PROFILE_ID"
   }
 }
 ```
@@ -158,6 +241,11 @@ GET  /api/workspaces/{workspace_id}/jobs/{job_id}/events
   "id": "JOB_ID",
   "type": "ingest",
   "status": "running",
+  "model_profile_id": "PROFILE_ID",
+  "model": {
+    "provider": "ollama",
+    "name": "qwen-model"
+  },
   "attempt": 1,
   "max_attempts": 3,
   "progress": {
@@ -275,7 +363,8 @@ POST /api/workspaces/{workspace_id}/queries/{query_id}/save-to-wiki
   "question": "Aurora 什么时候启动？",
   "scope": "local_graph",
   "center_page_id": "PAGE_ID",
-  "depth": 1
+  "depth": 1,
+  "model_profile_id": "OPTIONAL_PERSONAL_OR_WORKSPACE_PROFILE_ID"
 }
 ```
 
@@ -296,11 +385,13 @@ HTTP/1.1 202 Accepted
 
 Query 由 RQ Worker 执行。Worker 将实时事件发布到 Redis，FastAPI 转发为 SSE；最终回答、引用和状态保存到 PostgreSQL，因此断线后可通过普通 GET 恢复。
 
+普通 Query 可以显式选择用户有权使用的 Profile；未提供时按“个人默认 → Workspace 默认”选择。`save-to-wiki` 创建的新 Job 必须改用当时的 Workspace 默认写入 Profile，不能沿用其他成员的 personal Profile。
+
 Query SSE：
 
 ```text
 event: meta
-data: {"query_id":"QUERY_ID","candidate_page_ids":["PAGE_ID"]}
+data: {"query_id":"QUERY_ID","candidate_page_ids":["PAGE_ID"],"model":{"profile_id":"PROFILE_ID","provider":"ollama","name":"qwen-model"}}
 
 event: token
 data: {"text":"Project Aurora"}

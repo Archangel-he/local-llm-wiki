@@ -25,6 +25,7 @@
 | Obsidian Graph View | Sigma.js + Graphology | Web 化替代 |
 | 文件历史/Git | `wiki_revisions` + AuditLog | 多用户化替代 |
 | Agent 直接写文件 | LLM 变更计划 + 后端事务 | 不照搬 |
+| 多模型供应商设置 | Ollama/OpenAI-compatible Model Profile | Web 化并加强密钥隔离 |
 
 ## 纳入设计的补充
 

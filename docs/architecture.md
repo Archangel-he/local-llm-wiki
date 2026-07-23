@@ -6,6 +6,7 @@
 
 - localhost 上一条命令启动；
 - Mac Studio 上使用原生 Ollama 和 Metal；
+- 用户可在 Ollama 与自己的 OpenAI-compatible API 之间选择；
 - 从第一天按用户和知识空间隔离数据；
 - 后续可以迁移到老师的阿里云服务器；
 - Raw 来源不可变，Wiki 可追溯、可版本化、可导出；
@@ -15,8 +16,9 @@
 非目标：
 
 - MVP 阶段不支持离线浏览器应用；
-- 不让浏览器直接连接 PostgreSQL、Redis、OSS 或 Ollama；
+- 不让浏览器直接连接 PostgreSQL、Redis、OSS、Ollama 或外部模型 API；
 - 不把模型生成内容当作无来源事实；
+- 不让云端站点直接连接访问者电脑上的 localhost Ollama；本地 Connector 不在当前 MVP；
 - 不在 MVP 阶段实现多区域和自动水平扩缩容。
 
 ## 组件图
@@ -34,7 +36,8 @@ flowchart LR
     W --> P
     W --> S
     W --> L["LLM adapter"]
-    L --> O["Ollama / model endpoint"]
+    L --> O["Mac / server Ollama"]
+    L --> E["OpenAI-compatible API"]
 
     S --> LOCAL["Local filesystem"]
     S -. "production" .-> OSS["Alibaba Cloud OSS"]
@@ -57,11 +60,13 @@ flowchart LR
 - 不持有数据库或 OSS 凭据；
 - 所有业务数据通过 API 获取；
 - Session Cookie 使用 `HttpOnly`，前端不能读取。
+- API Key 提交后不进入前端状态、localStorage 或可回显响应。
 
 ### FastAPI
 
 - 输入验证、认证和 Workspace 授权；
 - 创建 Source、Job、Query 和 Lint 命令；
+- 管理脱敏的 Model Profile、连接测试和 Workspace 模型策略；
 - 返回 Wiki、文件树、图谱和审计数据；
 - 通过 SSE 输出任务进度和模型流式回答；
 - 不在请求进程中执行长时间模型推理。
@@ -70,6 +75,7 @@ flowchart LR
 
 - 在线业务权威数据库；
 - 保存用户、Workspace、成员、来源元数据和任务状态；
+- 保存 Model Profile 元数据和 API Key 密文；凭据主密钥位于数据库之外；
 - 保存 Wiki Markdown 正文、版本、链接和引用；
 - 保存审计日志和查询记录；
 - 通过事务保证一批 Wiki 变更同时成功或回滚。
@@ -102,15 +108,45 @@ create_export(workspace_id)
 ### LLM adapter
 
 ```text
-health()
-generate_structured(schema, messages, options)
-stream(messages, options)
+health(profile)
+test_connection(profile)
+generate_structured(profile, schema, messages, options)
+stream(profile, messages, options)
 ```
 
-- 第一实现为 Ollama；
+- 首批实现为 Ollama 与 OpenAI-compatible API；
 - 业务层不依赖具体模型名称；
 - 模型只返回结构化计划或文本流，不直接访问数据库；
-- 所有模型调用记录模型、Prompt/Schema 版本、耗时和结果状态。
+- 所有模型调用记录 Profile ID、Provider、Model ID、Prompt/Schema 版本、耗时和结果状态，不记录 API Key；
+- 非兼容的供应商协议通过独立 adapter 增加，不假设任意 API 都兼容。
+
+## Model Profile 与选择规则
+
+Profile 分为：
+
+```text
+personal   仅所有者可使用，用于个人 Query
+workspace  Owner 管理，用于共享 Wiki 写入任务
+```
+
+选择顺序：
+
+```text
+普通 Query
+→ 请求显式选择的可访问 Profile
+→ 用户默认 Query Profile
+→ Workspace 默认 Profile
+→ 未配置则返回 MODEL_PROFILE_REQUIRED
+
+Ingest / Lint / Save-to-Wiki / Schema migration
+→ 只使用 Workspace 默认 Profile
+```
+
+MVP 0～2 的 default user 兼具用户和 Owner 身份，因此可以在同一设置页选择本机 Ollama 或自己的 API。MVP 3 启用身份后，个人 Profile 不会自动成为团队 Workspace 的写入 Profile。
+
+“本机 Ollama”是相对 API/Worker 所在部署环境而言：localhost 部署可访问同一台 Mac 的 Ollama；阿里云部署只能访问 ECS 同机、VPC/受控隧道内或公网可达且策略允许的模型 Endpoint，不能访问浏览器用户的 localhost。
+
+Job 创建时保存 `model_profile_id` 和不含凭据的配置快照；重试沿用同一快照。Profile 被撤销后，尚未开始的新尝试失败并要求重新选择，不复制一份 API Key 到 Job。
 
 ## 权威数据边界
 
@@ -144,7 +180,7 @@ sequenceDiagram
     participant P as PostgreSQL
     participant R as Redis/RQ
     participant W as Worker
-    participant L as Ollama
+    participant L as Selected LLM provider
 
     U->>A: 上传文件
     A->>A: 校验权限/类型/大小并计算 SHA-256
@@ -171,7 +207,7 @@ sequenceDiagram
     participant P as PostgreSQL
     participant R as Redis/RQ
     participant W as Worker
-    participant L as Ollama
+    participant L as Selected LLM provider
 
     U->>A: Query(scope, question)
     A->>P: Workspace 授权
@@ -209,6 +245,8 @@ Ollama 默认运行在 macOS 宿主机：
 LLM_BASE_URL=http://host.docker.internal:11434
 ```
 
+这些环境变量只用于首次启动时创建默认 Ollama Profile；之后的用户选择以数据库中的 Model Profile 和 Workspace Policy 为准。
+
 ## 阿里云拓扑
 
 早期生产仍使用单台 ECS + Docker Compose：
@@ -219,10 +257,10 @@ Internet
 → API / Worker
 → PostgreSQL / Redis（仅容器内网）
 → OSS 或挂载数据盘
-→ 同机 Ollama 或私网模型服务
+→ 同机 Ollama、私网模型服务或用户允许的外部 API
 ```
 
-只有 80/443 对公网开放；22 只允许可信 IP。PostgreSQL、Redis、Ollama 和对象存储管理端口不得直接暴露公网。
+只有 80/443 对公网开放；22 只允许可信 IP。PostgreSQL、Redis、Ollama 和对象存储管理端口不得直接暴露公网。外部 API 由 Worker 通过受控出站连接访问。
 
 ## 扩展触发条件
 
@@ -244,3 +282,4 @@ Internet
 - [Wiki Schema](wiki-schema.md)
 - [API 契约](api-contract.md)
 - [部署设计](deployment.md)
+- [Model Profile 决策](decisions/006-model-profiles.md)

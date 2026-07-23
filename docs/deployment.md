@@ -28,7 +28,7 @@ LLM_BASE_URL=http://host.docker.internal:11434
 LLM_MODEL=<installed-model>
 ```
 
-Linux/GPU 服务器可将 Ollama 作为同机服务或独立内网服务。
+Linux/GPU 服务器可将 Ollama 作为同机服务或独立内网服务。以上变量用于首次启动时创建默认 Ollama Profile；用户后续在 Web 设置中选择 Ollama 或 OpenAI-compatible API。
 
 ## 配置
 
@@ -44,6 +44,7 @@ LOCAL_STORAGE_PATH=/app/storage
 LLM_PROVIDER=ollama
 LLM_BASE_URL=http://host.docker.internal:11434
 LLM_MODEL=<model>
+MODEL_CREDENTIAL_ENCRYPTION_KEY_FILE=/run/secrets/model_credential_key
 MAX_UPLOAD_MB=10
 JOB_MAX_ATTEMPTS=3
 ```
@@ -53,9 +54,12 @@ JOB_MAX_ATTEMPTS=3
 ```text
 DATABASE_PASSWORD
 SESSION_SECRET
+MODEL_CREDENTIAL_ENCRYPTION_KEY
 OSS_ACCESS_KEY_ID
 OSS_ACCESS_KEY_SECRET
 ```
+
+本地开发可以通过受限权限的 Secret 文件提供模型凭据主密钥；生产环境优先使用阿里云 KMS/Secrets Manager 或 Docker Secret 挂载，不把主密钥写进数据库、镜像、Git 或普通日志。数据库只保存 API Key 密文和 `credential_key_version`。
 
 ## Local 启动目标
 
@@ -117,6 +121,34 @@ ECS Web/API → VPC 私网 → GPU Model Server
 ### 模式 C：开发期 Mac Studio
 
 仅用于短期测试，不作为生产默认方案。若临时连接，必须使用受控 VPN/隧道和鉴权，不直接把 Ollama 端口暴露公网。
+
+阿里云上的 API/Worker 无法直接访问访问者 Mac 的 `localhost:11434`。若 Ollama 运行在个人 Mac，当前只支持网站也在该 Mac 上的 localhost 模式；云端访问个人 Mac 需要未来单独设计有身份、加密和出站连接的 Local Connector，不属于当前 MVP。
+
+### 模式 D：用户自备 OpenAI-compatible API
+
+```text
+Browser → API 保存 write-only API Key
+Worker → HTTPS → 用户配置的模型服务
+```
+
+- 用户必须知道任务所需的来源/Wiki 片段会离开本服务器；
+- API Key 认证加密保存，Worker 只在调用时短暂解密；
+- 首期只承诺 OpenAI-compatible chat/streaming 语义；
+- Profile 必须先通过连接和能力测试；
+- 外部服务的价格、配额、保留策略和可用性由用户确认。
+
+## 自定义 Endpoint 安全策略
+
+Local 与 Production 使用不同策略：
+
+- Local：允许系统预设的 `host.docker.internal` Ollama 地址；其他地址仍需校验；
+- Production：默认只允许 HTTPS 公网 Endpoint；
+- 私网模型服务需要部署管理员配置 hostname/CIDR allowlist；
+- 拒绝 loopback、link-local、云元数据地址、未授权 RFC1918/ULA 和非 HTTP(S) scheme；
+- DNS 解析后的所有 IP 都要检查，连接前再次解析，降低 DNS rebinding 风险；
+- 禁止自动跟随重定向，或对每个重定向目标重新执行同样检查；
+- 限制连接/读取超时、响应大小、并发和允许端口；
+- 上游错误只返回脱敏摘要，不透传可能包含凭据的响应头和正文。
 
 ## 网络和 HTTPS
 
@@ -189,7 +221,10 @@ PostgreSQL dump / base backup
 Raw 与附件
 应用配置（不含明文 Secret）
 Schema/Prompt 版本
+Model Profile 密文和非秘密元数据
 ```
+
+模型凭据主密钥与数据库备份分开保管。恢复演练必须证明：没有主密钥不能解密 Profile；授权恢复主密钥后可以测试 Profile；轮换后旧密文完成渐进重加密。不得为了“方便恢复”导出明文 API Key。
 
 最低验收不是“备份命令成功”，而是恢复演练：
 
@@ -216,12 +251,15 @@ request_id
 job_id
 workspace_id
 user_id
+model_profile_id
+model_provider
+model_name
 event
 duration_ms
 error_code
 ```
 
-不得记录：密码、Session、OSS Secret、完整私人文件内容和不必要的完整 Prompt。
+不得记录：密码、Session、API Key、Authorization header、带敏感 query 的 Base URL、OSS Secret、完整私人文件内容和不必要的完整 Prompt。
 
 最低监控：
 
@@ -230,13 +268,15 @@ error_code
 - Worker 心跳；
 - 队列长度和最老 Job 等待时间；
 - Job 成功/失败/重试；
-- Ollama 可用性和调用耗时；
+- 各 Provider/Profile 的脱敏可用性、调用耗时、429 和错误率；
 - 磁盘使用率；
 - 备份最后成功时间。
 
 ## 故障恢复
 
 - LLM 不可用：Health degraded，Wiki 浏览继续可用；
+- Profile invalid/revoked：禁止新任务，提示 Owner/用户测试或更换；
+- 外部 API 429/5xx：按 Retry-After/退避策略重试，不切换到另一 Profile 造成不可审计结果；
 - Redis 重启：根据 PostgreSQL queued/retrying Job 恢复入队；
 - Worker 中断：超时扫描将 stale running Job 转 retrying；
 - Storage 不可用：禁止创建 Source，既有 Wiki 仍可读；
@@ -261,3 +301,6 @@ error_code
 - [阿里云 GPU 实例](https://help.aliyun.com/zh/ecs/user-guide/gpu-accelerated-compute-optimized-and-vgpu-accelerated-instance-families-1)
 - [OSS HTTPS](https://help.aliyun.com/zh/oss/user-guide/access-oss-by-https-protocol)
 - [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+- [Ollama API](https://docs.ollama.com/api/introduction)
+- [OWASP Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
+- [OWASP SSRF Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
