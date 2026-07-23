@@ -1,15 +1,16 @@
 """Create default user and default workspace for MVP 0."""
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .database import engine, SessionLocal
-from .models.base import new_uuid
 from .models.user import Membership, User, Workspace
 
-DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
-DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000002"
+DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
 def seed_database() -> None:
