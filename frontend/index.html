@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>local-llm-wiki</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar placeholder -->
+    <header id="topbar">
+      <span class="logo">local-llm-wiki</span>
+      <span id="health-badge" class="badge">checking…</span>
+    </header>
+
+    <!-- Three-column layout -->
+    <main id="layout">
+      <!-- Left: File tree -->
+      <aside id="sidebar" class="panel">
+        <div class="panel-header">Files</div>
+        <div class="file-list">
+          <div class="file-group">
+            <div class="file-group-title">Raw Sources</div>
+            <div class="file-item empty">No sources yet</div>
+          </div>
+          <div class="file-group">
+            <div class="file-group-title">Wiki</div>
+            <div class="file-item empty">No wiki pages yet</div>
+          </div>
+          <div class="file-group">
+            <div class="file-group-title">Lint Issues</div>
+            <div class="file-item empty">No issues</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center: Graph + Query -->
+      <section id="center" class="panel">
+        <div id="graph-panel" class="sub-panel">
+          <div class="panel-header">Knowledge Graph</div>
+          <div id="mock-graph" class="graph-container">
+            <svg viewBox="0 0 300 200" class="mock-svg">
+              <circle cx="150" cy="60" r="20" fill="#4f8fff" />
+              <text x="150" y="65" text-anchor="middle" fill="white" font-size="8">Node A</text>
+              <circle cx="80" cy="140" r="16" fill="#ff6b6b" />
+              <text x="80" y="144" text-anchor="middle" fill="white" font-size="7">Node B</text>
+              <circle cx="220" cy="140" r="16" fill="#51cf66" />
+              <text x="220" y="144" text-anchor="middle" fill="white" font-size="7">Node C</text>
+              <circle cx="150" cy="180" r="12" fill="#fcc419" />
+              <text x="150" y="183" text-anchor="middle" fill="white" font-size="6">Node D</text>
+              <line x1="150" y1="80" x2="80" y2="124" stroke="#999" stroke-width="1.5" />
+              <line x1="150" y1="80" x2="220" y2="124" stroke="#999" stroke-width="1.5" />
+            </svg>
+          </div>
+        </div>
+        <div id="query-panel" class="sub-panel">
+          <div class="panel-header">Query</div>
+          <div class="query-box">
+            <div class="query-message system">Select a scope and ask a question about your wiki.</div>
+          </div>
+          <div class="query-input-row">
+            <select id="scope-select" class="scope-select">
+              <option value="current">Current Page</option>
+              <option value="local">Local Graph</option>
+              <option value="workspace">Workspace</option>
+            </select>
+            <input id="query-input" type="text" placeholder="Ask a question…" disabled />
+            <button id="query-btn" disabled>Ask</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Wiki page -->
+      <aside id="wiki-panel" class="panel">
+        <div class="panel-header">Wiki Page</div>
+        <div id="wiki-content" class="wiki-content">
+          <div class="empty-state">
+            <h2>Welcome to local-llm-wiki</h2>
+            <p>Upload your first document to get started. The system will read it, create wiki pages, and build a knowledge graph automatically.</p>
+            <ol class="welcome-steps">
+              <li>Upload a Markdown or PDF file</li>
+              <li>Wait for the AI to process it</li>
+              <li>Explore the generated wiki and graph</li>
+            </ol>
+            <p class="hint">MVP 0 — Engineering skeleton. Backend services are initializing.</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "MVP-*"]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  backend-checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wiki
+          POSTGRES_PASSWORD: wiki
+          POSTGRES_DB: wiki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wiki"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          pip install --upgrade pip
+          pip install -r dev-requirements.txt
+
+      - name: Run database migrations
+        working-directory: ./backend
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+psycopg://wiki:wiki@localhost:5432/wiki
+          REDIS_URL: redis://localhost:6379/0
+
+      - name: Seed database
+        working-directory: ./backend
+        run: python -m app.seed
+        env:
+          DATABASE_URL: postgresql+psycopg://wiki:wiki@localhost:5432/wiki
+          REDIS_URL: redis://localhost:6379/0
+
+      - name: Verify health endpoint (local)
+        working-directory: ./backend
+        run: |
+          python -c "
+          import urllib.request, json
+          from app.main import app
+          from fastapi.testclient import TestClient
+          client = TestClient(app)
+          resp = client.get('/api/health')
+          data = resp.json()
+          assert data['status'] in ('ok', 'degraded'), f'Unexpected status: {data}'
+          assert 'api' in data['components']
+          assert 'postgres' in data['components']
+          assert 'redis' in data['components']
+          print(f'Health OK: {json.dumps(data, indent=2)}')
+          "
+        env:
+          DATABASE_URL: postgresql+psycopg://wiki:wiki@localhost:5432/wiki
+          REDIS_URL: redis://localhost:6379/0
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
