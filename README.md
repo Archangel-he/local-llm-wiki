@@ -96,7 +96,7 @@ flowchart LR
 
 | 层级 | 技术 | 职责 |
 | --- | --- | --- |
-| 前端 | HTML / CSS / JavaScript | 资料上传、任务状态、Wiki 浏览与问答 |
+| 前端 | Vite + TypeScript + Sigma.js | 文件管理、关系图谱、问答与 Wiki 阅读 |
 | API | FastAPI | 认证、权限、工作区、查询和任务编排 |
 | 业务数据库 | PostgreSQL | 用户、空间、来源、任务、页面元数据和审计记录 |
 | 任务队列 | Redis + Worker | 执行耗时的摄取、查询和 Lint 任务 |
@@ -107,6 +107,104 @@ flowchart LR
 
 > [!NOTE]
 > 在 macOS 上，Ollama 原生运行可以直接使用 Metal。应用容器通过 `host.docker.internal:11434` 访问 Ollama。部署到阿里云后，可通过环境变量将模型切换为同机 Ollama 或独立推理服务。
+
+## 前端设计与实施策略
+
+前端不等后端全部完成后再开始，但首轮只完成线框、数据契约和最小工程骨架；配色、动画、响应式和高级交互在核心闭环稳定后统一精修。
+
+### 桌面端主布局
+
+顶部区域暂时只预留，不提前锁定具体功能。工作区采用类似 Obsidian 的三栏结构：左侧文件管理，中间上方关系图谱、中间下方问答，右侧 Wiki 条目。
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                              顶部区域（待定）                         │
+├──────────────┬─────────────────────────────┬─────────────────────────┤
+│ 文件管理      │ 关系图谱                     │ Wiki 条目                │
+│              │                             │                         │
+│ ▾ Raw        │ [全局图] [局部图] [筛选]     │ 页面标题                  │
+│ ▾ Wiki       │                             │ Markdown 正文             │
+│ ▾ Lint       │                             │ 来源与引用                 │
+│ ▾ Recent     ├─────────────────────────────┤ 双向链接                   │
+│              │ 问答区                       │ 版本记录                   │
+│              │ [当前条目][局部图][全空间]   │                         │
+└──────────────┴─────────────────────────────┴─────────────────────────┘
+```
+
+默认尺寸建议：
+
+- 左侧文件管理宽度为 240～280px；
+- 中间和右侧按约 60% / 40% 分配剩余空间；
+- 图谱和问答按约 65% / 35% 分配中间区域高度；
+- 左右和上下分隔线均可拖动；
+- 图谱、问答和 Wiki 均支持单独最大化；
+- 面板尺寸后续保存为用户偏好。
+
+移动端不属于早期 MVP 范围，优先保证桌面浏览器和 Mac Studio 上的使用体验。
+
+### 面板联动
+
+```text
+左侧选择资料或 Wiki
+→ 图谱定位相关节点
+→ 右侧打开对应条目
+→ 问答区选择当前条目、局部图或全空间作为范围
+→ 点击回答引用
+→ 右侧跳转页面，图谱同步高亮
+```
+
+- 点击 Raw 文件：右侧显示只读来源预览，图谱突出由它生成或影响的 Wiki 页面。
+- 点击 Wiki 文件：右侧打开条目，图谱切换到该页面的局部关系图。
+- 点击图谱节点：右侧打开对应条目，并将其设置为问答的当前上下文。
+- 点击图谱边：右侧展示该关系对应的 Wiki Link、来源或冲突证据。
+- 点击问答引用：右侧跳转到引用页面或来源，图谱定位对应节点。
+
+左侧展示当前知识空间内的逻辑目录，不直接暴露服务器文件系统：
+
+```text
+Raw Sources
+Wiki
+Lint Issues
+Recent
+Favorites
+Trash
+```
+
+### 关系图谱
+
+图谱是核心功能，不作为后期装饰。计划使用：
+
+```text
+Sigma.js + Graphology + ForceAtlas2 + Web Worker
+```
+
+- Sigma.js 使用 WebGL 渲染节点和边；
+- Graphology 保存前端图数据并提供图算法；
+- ForceAtlas2 提供类似 Obsidian 的力导向布局；
+- 布局计算放入 Web Worker，避免阻塞 Wiki 阅读和问答。
+
+第一版只显示有确定证据的关系：
+
+| 关系类型 | 含义 |
+| --- | --- |
+| `wikilink` | Wiki 页面之间的显式链接 |
+| `citation` | Wiki 页面引用原始资料 |
+| `derived_from` | Wiki 页面由哪些来源生成 |
+
+`related`、`contradicts` 等模型推断关系必须保存证据后才能显示，避免图谱充满无法解释的边。
+
+关系保存在 PostgreSQL 的 `wiki_links` 中，并始终包含 `workspace_id`、源页面、目标页面、关系类型、证据和版本信息。不需要在早期引入 Neo4j。
+
+### 前端开发节奏
+
+- **MVP 0**：建立三栏骨架、可拖动面板和 Mock 数据，不追求视觉完成度。
+- **MVP 1**：接入真实文件树、任务状态、Wiki 渲染和最小图谱。
+- **MVP 2**：接入问答、引用跳转、全局/局部图、筛选和 Lint 联动。
+- **MVP 3**：接入登录、知识空间切换和数据隔离状态。
+- **MVP 4**：接入成员、角色、版本和并发冲突 UI。
+- **MVP 5**：完成视觉统一、错误状态、生产 E2E 和必要的响应式适配。
+
+可以延后到核心闭环稳定后再做：主题、动画、快捷键、移动端、高级聚类、布局个性化和新手引导。
 
 ## 数据隔离
 
@@ -132,6 +230,7 @@ sources
 ingest_jobs
 wiki_pages
 wiki_revisions
+wiki_links
 citations
 audit_logs
 ```
@@ -191,12 +290,14 @@ default-user
 
 交付内容：
 
-- FastAPI、PostgreSQL、Redis、Worker 和静态前端；
+- FastAPI、PostgreSQL、Redis、Worker 和 Vite + TypeScript 前端；
 - `GET /api/health`；
 - Alembic 数据库迁移；
 - 默认用户与默认空间初始化；
 - 本地存储适配器；
 - Ollama 连接检查；
+- 三栏可拖动前端骨架；
+- Mock 文件树、图谱、问答和 Wiki 条目；
 - Docker Compose 持久化卷。
 
 闭环测试：
@@ -204,6 +305,7 @@ default-user
 ```text
 docker compose up
 → 自动创建默认用户和空间
+→ 三栏骨架显示 Mock 文件、图谱、问答和 Wiki
 → 页面显示 API、数据库、队列和 Ollama 状态
 → 重启容器
 → 默认空间和测试数据仍然存在
@@ -214,7 +316,8 @@ docker compose up
 - 所有服务可以一条命令启动；
 - Ollama 不可用时应用仍可启动，并明确展示错误状态；
 - 数据库迁移可以从空库执行；
-- 重复初始化不会产生多个默认用户或空间。
+- 重复初始化不会产生多个默认用户或空间；
+- 调整面板尺寸不会破坏图谱、问答和 Wiki 的显示。
 
 ### MVP 1：单用户文档摄取
 
@@ -226,7 +329,9 @@ docker compose up
 → Worker 调用 Ollama
 → 生成 Wiki 页面
 → 更新 index.md 和审计记录
-→ 用户在网页中浏览页面
+→ 左侧文件树出现资料和 Wiki
+→ 中间图谱出现节点和关系
+→ 点击节点在右侧浏览 Wiki
 ```
 
 验收标准：
@@ -237,6 +342,9 @@ docker compose up
 - 任务状态依次经过 `queued`、`running`、`completed`；
 - 页面、来源和任务均属于默认 `workspace_id`；
 - 修改 URL 中的 `workspace_id` 不能访问其他或不存在的空间；
+- 图谱至少显示 Wiki 页面节点和有证据的链接；
+- 点击节点能在右侧打开正确条目；
+- 点击来源能显示只读预览并高亮相关 Wiki 节点；
 - 重启应用后仍可浏览 Wiki。
 
 ### MVP 2：问答、增量更新与 Lint
@@ -250,6 +358,7 @@ docker compose up
 → 搜索当前空间 Wiki
 → 生成答案
 → 返回并打开引用
+→ 右侧跳转 Wiki，图谱定位对应节点
 ```
 
 增量闭环：
@@ -277,6 +386,9 @@ Lint 闭环：
 - 相关新资料更新既有主题页，不制造重复主题；
 - 冲突信息不会被静默覆盖；
 - Lint 至少能报告断链、孤立页面和缺失来源；
+- 支持全局图和当前页面一至三层局部图；
+- 问答可选择当前条目、局部图或整个空间作为范围；
+- 孤立节点、断链和冲突可以从图谱进入对应 Lint 问题；
 - Query、Ingest 和 Lint 都留下审计记录。
 
 ### MVP 3：真正的多用户
@@ -288,6 +400,7 @@ Lint 闭环：
 - 注册、登录和退出；
 - 安全的会话 Cookie；
 - 一个用户可以创建多个知识空间；
+- 前端可以切换知识空间，文件树、图谱、问答和 Wiki 同步切换；
 - API、搜索、下载和任务均进行权限校验；
 - 上传和后台任务支持多个用户并发提交。
 
@@ -393,16 +506,16 @@ Local backup           →   Scheduled off-host backup
 | A：架构与集成 | 架构、Docker、CI、接口契约、版本验收和云端部署 | `docker-compose.yml`、`.github/`、集成测试 |
 | B：后端与数据 | FastAPI、PostgreSQL、数据模型、认证和权限 | `backend/api/`、`backend/models/`、`migrations/` |
 | C：LLM 与 Wiki | Ollama、Worker、Ingest、Query、增量更新和 Lint | `backend/services/`、`backend/worker/`、Schema |
-| D：前端与测试 | 页面交互、任务状态、Wiki 浏览、测试资料和 E2E | `frontend/`、`tests/e2e/`、用户文档 |
+| D：前端与测试 | 三栏工作区、关系图谱、问答联动、Wiki 阅读、测试资料和 E2E | `frontend/`、`tests/e2e/`、用户文档 |
 
 ### 各阶段任务
 
 | 阶段 | A | B | C | D |
 | --- | --- | --- | --- | --- |
-| MVP 0 | Compose、CI、集成验收 | 数据模型、Health API | Ollama 与 Worker 骨架 | 状态页、E2E 骨架 |
-| MVP 1 | 摄取接口契约 | 上传、哈希、任务记录 | Wiki 生成与索引 | 上传与 Wiki 浏览页 |
-| MVP 2 | 验收数据集 | Query API、检索 | 引用、增量更新、Lint | 问答与 Lint 页面 |
-| MVP 3 | 安全验收 | 注册、会话、空间隔离 | 任务空间隔离 | 登录和空间管理页 |
+| MVP 0 | Compose、CI、集成验收 | 数据模型、Health API | Ollama 与 Worker 骨架 | 三栏布局、Mock 图谱、E2E 骨架 |
+| MVP 1 | 摄取与图谱契约 | 上传、哈希、任务、Graph API | Wiki、链接与索引 | 文件树、基础图谱、Wiki 阅读 |
+| MVP 2 | 图谱验收数据集 | Query API、检索、局部图 | 引用、增量更新、Lint | 问答引用、图谱筛选和 Lint 联动 |
+| MVP 3 | 安全验收 | 注册、会话、空间隔离 | 任务空间隔离 | 登录和知识空间切换 |
 | MVP 4 | 权限矩阵验收 | 成员和角色 API | Wiki 版本与冲突 | 邀请、成员和版本 UI |
 | MVP 5 | 部署、HTTPS、备份 | 数据迁移与恢复 | 模型部署与质量验证 | 生产 E2E 和使用文档 |
 
@@ -425,7 +538,13 @@ local-llm-wiki/
 │   ├── models/              # PostgreSQL 数据模型
 │   ├── services/            # Ingest、Query、Lint 和存储接口
 │   └── worker/              # 后台任务
-├── frontend/                # 原生 Web 界面
+├── frontend/                # Vite + TypeScript 前端
+│   └── src/
+│       ├── layout/          # 三栏工作区和可拖动面板
+│       ├── files/           # 文件管理
+│       ├── graph/           # Sigma.js 关系图谱
+│       ├── chat/            # 问答和引用
+│       └── wiki/            # Wiki 阅读与版本
 ├── migrations/              # Alembic 数据库迁移
 ├── storage/                 # 本地开发数据，不提交到 Git
 ├── tests/
@@ -452,6 +571,8 @@ local-llm-wiki/
 | `POST` | `/api/workspaces/{id}/lint` | 检查 Wiki 健康状态 |
 | `GET` | `/api/workspaces/{id}/wiki` | 获取 Wiki 页面列表 |
 | `GET` | `/api/workspaces/{id}/wiki/{path}` | 读取指定 Wiki 页面 |
+| `GET` | `/api/workspaces/{id}/graph` | 获取空间全局关系图 |
+| `GET` | `/api/workspaces/{id}/graph?scope=local&center={page_id}&depth=1` | 获取页面局部关系图 |
 
 ## 预期启动方式
 
@@ -520,7 +641,17 @@ make test-ollama
 - 一个资料中不存在的问题；
 - 两份存在更新或冲突的来源；
 - 一个断开的 Wiki 链接；
+- 一个包含四个节点、两条边和一个孤立节点的图谱；
 - 两个相互隔离的用户和知识空间。
+
+图谱前端还必须验证：
+
+- 点击节点可以打开正确 Wiki；
+- 点击问答引用可以定位对应节点；
+- 删除 Wiki Link 后相关边自动消失；
+- 不同知识空间的节点不会混入同一图谱；
+- 500～1000 个固定测试节点下仍可缩放、筛选和点击；
+- ForceAtlas2 在 Web Worker 中运行，不阻塞输入和阅读。
 
 ## 设计原则
 
