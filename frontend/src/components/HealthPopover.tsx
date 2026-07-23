@@ -14,7 +14,7 @@ export function HealthPopover({ open }: HealthPopoverProps) {
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 800);
+    const timeout = window.setTimeout(() => controller.abort(), 4_500);
     getHealthSnapshot(controller.signal).then(setHealth);
     return () => {
       window.clearTimeout(timeout);

@@ -58,9 +58,9 @@ corepack pnpm test:e2e
   均可操作。
 - 系统开启“减少动态效果”时，图谱会直接落到目标状态。
 
-## 与其他角色的联调依赖
+## 集成状态
 
-- A：将 `pnpm build` 和 `frontend/dist/` 接入 Docker Compose、Caddy、CI、
-  `make test-e2e` 与 `make verify-mvp0`。
-- B：实现并稳定 `GET /api/health` 响应契约；前端已经通过独立数据层调用该接口。
-- C：确认默认 Ollama Profile、Provider 状态和 degraded 语义；MVP 0 页面不调用真实模型。
+- `pnpm build` 的产物已由 Caddy 镜像构建并托管。
+- Docker Compose、CI、`make test-e2e` 和 `make verify-mvp0` 已包含前端检查。
+- 健康面板已接入 `GET /api/health`；图谱、搜索、来源、任务和设置数据仍使用
+  `fixtures/workspace.ts` 中的 fixtures，等待 C 的 API 合并后替换。

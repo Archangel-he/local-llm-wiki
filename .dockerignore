@@ -1,0 +1,11 @@
+.git
+.env
+.understand-anything
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+frontend/node_modules
+frontend/dist
+frontend/playwright-report
+frontend/test-results
+storage
