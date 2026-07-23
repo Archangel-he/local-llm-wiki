@@ -60,6 +60,8 @@ JOB_NOT_CANCELLABLE
 REVISION_CONFLICT
 LLM_UNAVAILABLE
 SCHEMA_VALIDATION_FAILED
+ALIAS_CONFLICT
+SCHEMA_VERSION_CONFLICT
 RATE_LIMITED
 INTERNAL_ERROR
 ```
@@ -103,6 +105,8 @@ DELETE 在 MVP 阶段执行归档，不物理删除。
 ```http
 GET  /api/workspaces/{workspace_id}/tree
 POST /api/workspaces/{workspace_id}/sources
+POST /api/workspaces/{workspace_id}/source-batches
+GET  /api/workspaces/{workspace_id}/source-batches/{batch_id}
 GET  /api/workspaces/{workspace_id}/sources/{source_id}
 GET  /api/workspaces/{workspace_id}/sources/{source_id}/content
 DELETE /api/workspaces/{workspace_id}/sources/{source_id}
@@ -132,6 +136,8 @@ HTTP/1.1 202 Accepted
 MVP 1：UTF-8 `.md`、`.txt`，默认上限 10 MiB。
 
 MVP 2：文本型 PDF，默认上限 50 MiB；扫描 PDF/OCR 不在早期范围。
+
+`source-batches` 在 MVP 2 启用。Batch 只聚合多个独立 Source/Job，响应包含 total/queued/skipped/completed/failed/cancelled；单个文件失败不回滚其他文件。
 
 ## Job
 
@@ -187,6 +193,9 @@ data: {"job_id":"JOB_ID","affected_page_ids":["PAGE_ID"]}
 ```http
 GET   /api/workspaces/{workspace_id}/wiki
 GET   /api/workspaces/{workspace_id}/wiki/{page_id}
+GET   /api/workspaces/{workspace_id}/wiki-system/index
+GET   /api/workspaces/{workspace_id}/wiki-system/overview
+GET   /api/workspaces/{workspace_id}/wiki-system/activity
 PATCH /api/workspaces/{workspace_id}/wiki/{page_id}
 GET   /api/workspaces/{workspace_id}/wiki/{page_id}/revisions
 GET   /api/workspaces/{workspace_id}/wiki/{page_id}/revisions/{revision_no}
@@ -204,6 +213,10 @@ POST  /api/workspaces/{workspace_id}/wiki/{page_id}/restore
 ```
 
 版本不匹配返回 409。
+
+Wiki 响应包含 `aliases` 和 `summary`。Index/Activity 是只读投影；Overview 是版本化 Wiki 内容。
+
+Index/Activity 从 MVP 1 提供，Overview 从 MVP 2 提供。
 
 ## Graph
 
@@ -314,6 +327,21 @@ POST /api/workspaces/{workspace_id}/lint-issues/{issue_id}/ignore
 ```
 
 Lint Issue 包含：类型、严重度、页面、证据、建议动作、状态和创建时间。Lint 不自动修改 Wiki。
+
+## Schema
+
+```http
+GET  /api/workspaces/{workspace_id}/schema
+GET  /api/workspaces/{workspace_id}/schema/versions
+GET  /api/workspaces/{workspace_id}/schema/suggestions
+GET  /api/workspaces/{workspace_id}/schema/suggestions/{suggestion_id}
+POST /api/workspaces/{workspace_id}/schema/suggestions/{suggestion_id}/accept
+POST /api/workspaces/{workspace_id}/schema/suggestions/{suggestion_id}/reject
+```
+
+接受 Suggestion 必须携带当前 `schema_version`；版本不匹配返回 409。接受操作创建新版本并写审计日志，不在原版本上覆盖。
+
+Schema Suggestion 在 MVP 2 启用；MVP 3～4 启用身份后，创建建议需要 Editor，激活新版本需要 Owner 或项目最终确定的等价权限。
 
 ## 成员与邀请
 

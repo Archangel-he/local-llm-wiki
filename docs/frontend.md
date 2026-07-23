@@ -12,6 +12,8 @@
 
 顶部区域预留，MVP 0 不锁定最终内容。
 
+参考 Obsidian Command Palette 后，顶部的候选职责为 Workspace 切换、全局搜索/命令入口、当前 Job 状态和用户菜单；这只是功能预留，不在 MVP 0 锁定视觉布局。文件、图谱、问答和 Wiki 的主工作区位置不变。
+
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │                              顶部区域（待定）                         │
@@ -43,6 +45,13 @@
 ```text
 Raw Sources
 Wiki
+  Sources
+  Entities
+  Concepts
+  Analyses
+  Questions
+  Index
+  Overview
 Lint Issues
 Recent
 Favorites
@@ -56,6 +65,8 @@ Trash
 - Lint Issue 可定位页面和图谱节点；
 - Trash 表示归档，不代表立即物理删除；
 - 上传显示校验、排队、处理和失败状态。
+- Batch 展示每个文件的 queued/running/skipped/completed/failed/cancelled；
+- Recent 展示由 Job/AuditLog 生成的摄取、查询、Lint 和编辑历史。
 
 ## 中间关系图谱
 
@@ -73,6 +84,7 @@ Sigma.js + Graphology + ForceAtlas2 + Web Worker
 - 点击边显示关系类型与证据；
 - 全局图/局部图切换；
 - 搜索并聚焦节点；
+- 标题、slug 和 aliases 都能定位同一节点；
 - 按页面类型、关系类型和状态筛选。
 
 视觉语义：
@@ -112,6 +124,7 @@ Sigma.js + Graphology + ForceAtlas2 + Web Worker
 
 ```text
 标题 / 类型 / 状态
+Aliases / 标签 / 一句话摘要
 Markdown 正文
 来源与引用
 双向链接
@@ -126,6 +139,8 @@ Markdown 正文
 - 查看/恢复历史版本；
 - 进入全屏阅读或编辑；
 - Editor 保存时提交 `expected_revision_no`。
+- Source Summary 展示本次影响页面和 Ingest 版本信息；
+- Index/Overview/Activity 使用只读系统视图样式。
 
 Viewer 不显示编辑和维护操作。
 
@@ -174,6 +189,7 @@ graph
 query
 layout
 notifications
+schema
 ```
 
 URL 保存可分享的非敏感视图状态：
@@ -216,6 +232,8 @@ URL 保存可分享的非敏感视图状态：
 - Markdown 渲染；
 - wikilink/citation/derived_from 图谱；
 - 点击节点打开 Wiki。
+- Source Summary、aliases、Index 和 Activity；
+- Obsidian 兼容导出预览。
 
 ### MVP 2
 
@@ -224,6 +242,10 @@ URL 保存可分享的非敏感视图状态：
 - 全局/局部图、筛选、搜索；
 - Lint 与图谱联动；
 - Wiki 版本浏览。
+- 多文件 Batch 队列和摄取历史；
+- alias/跨语言去重提示；
+- Schema Suggestion Diff 与确认；
+- Index、Overview 和 Activity 导航。
 
 ### MVP 3
 

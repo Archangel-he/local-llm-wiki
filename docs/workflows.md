@@ -37,6 +37,20 @@ flowchart TD
     K --> L["Job completed，前端刷新树/图/Wiki"]
 ```
 
+Worker 内部遵循“先提取、再解析实体、最后提交”：
+
+```text
+生成/更新 Source Summary
+→ 分批提取事实、实体、主题和 aliases
+→ 用 title/slug/alias 查找重复候选
+→ 合并候选并生成页面操作
+→ 校验全部操作
+→ 单事务提交
+→ 刷新 Index/Activity 投影，必要时创建 Overview 更新
+```
+
+长文档的中间批次不对 Query 可见。批量上传时每个 Source 是独立 Job，Batch 只汇总排队、成功、跳过、失败和取消数量。
+
 ### 失败与恢复
 
 | 失败点 | 行为 | 用户可见结果 |
@@ -119,6 +133,9 @@ flowchart LR
 - LLM 只建议语义冲突、缺失概念等 Issue，不直接修改 Wiki；
 - 同一规则、页面和证据指纹只保留一个 open Issue；
 - 修复后由重新扫描确认，不因点击按钮直接宣告解决。
+- Schema 类问题只生成 Suggestion；展示 Diff 并由用户确认后，才创建新版本。
+
+建议的维护顺序是：补 alias、处理重复页、修断链、连接孤立页、处理空页/缺引用、最后检查语义冲突。每一步都重新扫描，避免后续修复建立在过期结果上。
 
 闭环验证：固定图谱必须发现一个 orphan 和一个 broken link；点击 Issue 能定位页面/节点；修复并重扫后状态变为 resolved，审计记录完整。
 
@@ -181,7 +198,23 @@ Owner 可管理成员；Editor 可摄取和编辑；Viewer 只可浏览和查询
 
 导出是快照，不是在线权威数据。用户在 Obsidian 中修改文件不会自动回写；未来 Import 必须作为独立、可预览、可冲突检测的流程实现。
 
-## 7. 任务取消、重试与故障恢复
+导出同时生成 `overview.md` 和由 AuditLog 投影的 `log.md`，并按页面类型组织 `sources/entities/concepts/analyses/questions`。在线系统不保存一份需要手工同步的导出副本。
+
+## 7. Schema 建议与升级
+
+```text
+Lint 发现重复的页面结构或词表问题
+→ 创建 Schema Suggestion
+→ 展示规则、示例 Diff、受影响页面和风险
+→ 默认用户或 Owner 接受/拒绝；Editor 可评审
+→ 接受后创建 schema_version
+→ 后续 Job 使用新版本
+→ 旧页面只通过显式迁移更新
+```
+
+Schema 升级不与普通 Lint 修复混在同一事务中，且必须进入审计日志。
+
+## 8. 任务取消、重试与故障恢复
 
 ### 状态机
 
@@ -207,7 +240,7 @@ stateDiagram-v2
 - Redis 重启后，以 PostgreSQL 中 `queued/retrying` 为准重新入队；
 - 幂等键和数据库唯一约束防止恢复过程重复提交。
 
-## 8. MVP 交付流程
+## 9. MVP 交付流程
 
 每个阶段使用同一交付循环：
 

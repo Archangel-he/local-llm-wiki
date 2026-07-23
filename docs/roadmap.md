@@ -89,8 +89,10 @@ clone
 - RQ 超时、最多 3 次尝试（首次 + 2 次重试）、取消和幂等；
 - 结构化 Ingest JSON Schema；
 - `wikilink/citation/derived_from`；
+- Source Summary、页面 aliases 和创建前重复候选检查；
+- 确定性 Index/Activity 视图；
 - 文件树、Job SSE、Markdown 阅读和基础图谱；
-- Obsidian Vault/ZIP 最小导出。
+- Obsidian 兼容 Frontmatter、类型目录、Index/Log 导出。
 
 不包括 PDF、登录、角色和向量检索。
 
@@ -99,9 +101,9 @@ clone
 | 角色 | 任务 |
 | --- | --- |
 | A | Source/Job/Wiki 契约、跨服务集成和 Gate |
-| B | Upload API、Storage、表和 Wiki 提交事务 |
-| C | Parser、Ingest Schema、RQ、Ollama 和引用验证 |
-| D | 文件树、上传、Job 状态、基础图谱、Wiki 阅读、E2E |
+| B | Upload API、Storage、Page Alias 表和 Wiki 提交事务 |
+| C | Parser、Source Summary、aliases、Ingest Schema、RQ、Ollama 和引用验证 |
+| D | 文件树、上传、Job 状态、Index/Activity、基础图谱、Wiki 阅读、E2E |
 
 ### 闭环
 
@@ -110,6 +112,7 @@ clone
 → Raw 哈希保存
 → queued/running/completed
 → 生成 Aurora 和 Lin 页面
+→ 生成 Source Summary、aliases 和 Index
 → 图谱出现节点与链接
 → 点击节点打开 Wiki
 → 导出 Vault
@@ -122,12 +125,14 @@ clone
 - 非法 JSON 不产生半个 Wiki；
 - Wiki 更新一次事务提交；
 - 引用指向真实 Source；
+- title/slug/alias 不会创建重复页；
+- Source Summary 和 Activity 能回溯本次 Job；
 - 导出可由 Obsidian 打开；
 - `make verify-mvp1` 全绿。
 
 ### 预计
 
-约 5 个工作日。
+约 5～6 个工作日。
 
 ## MVP 2：增量知识、PDF、Query 与 Lint
 
@@ -138,12 +143,17 @@ clone
 ### 范围
 
 - 文本型 PDF，默认最大 50 MiB；
+- 长文档迭代分批提取；
+- 多文件 Batch、跳过已完成来源和单文件取消；
 - PostgreSQL FTS + `pg_trgm` 多语言回退；
 - current page/local graph/workspace 三种范围；
 - Query SSE 和引用验证；
 - 用户显式保存回答到 Wiki；
 - 增量更新、Revision conflict；
 - 确定性 Lint + LLM 辅助 Issue；
+- alias 补全、跨语言重复候选和有序维护；
+- Schema Suggestion、Diff 和人工确认；
+- Overview 和摄取历史；
 - 全局/局部图、筛选、搜索和 Lint 联动；
 - Revision 浏览与恢复。
 
@@ -154,9 +164,9 @@ clone
 | 角色 | 任务 |
 | --- | --- |
 | A | Aurora 评测集、Query/Lint Gate、性能基线 |
-| B | PDF API、FTS、Query/Lint API、Revision concurrency |
-| C | PDF parser、Query Prompt、引用、冲突和 Lint |
-| D | 流式问答、引用跳转、图谱筛选、Lint 和版本 UI |
+| B | PDF/Batch API、FTS、Schema 表/API、Query/Lint API、Revision concurrency |
+| C | PDF/长文档 pipeline、Query Prompt、引用、去重、Schema Suggestion 和 Lint |
+| D | Batch/历史、流式问答、引用跳转、图谱筛选、Schema Diff、Lint 和版本 UI |
 
 ### 闭环
 
@@ -164,9 +174,11 @@ clone
 摄取 Aurora A
 → 摄取 Aurora B
 → 更新同一页面并记录延期冲突
+→ alias 检索仍定位同一页面
 → 查询当前启动日期并获得引用
 → 查询未知预算并拒答
 → Lint 找到孤立页/断链/缺引用
+→ Schema Suggestion 经用户确认后创建新版本
 → 点击 Issue 返回图谱和 Wiki
 ```
 
@@ -176,12 +188,15 @@ clone
 - 引用不可伪造；
 - 未知问题拒答；
 - Query 结果不自动写 Wiki；
+- 长文档批次中间结果不可被 Query 读取；
+- Batch 单文件失败不影响其他已完成文件；
+- Schema 未经确认不能激活；
 - Graph 1000 节点目标可交互；
 - `make verify-mvp2` 全绿。
 
 ### 预计
 
-约 5～6 个工作日。
+约 7～8 个工作日。
 
 ## MVP 3：多用户与空间隔离
 
@@ -340,7 +355,7 @@ Owner 邀请 Editor/Viewer
 
 ## 里程碑总览
 
-在无外部阻塞、四人有效并行的情况下，MVP 0～2 约 3 周，MVP 3～5 约 3 周。时间只是规划基线；质量 Gate、真实模型速度和服务器条件优先。
+在无外部阻塞、四人有效并行的情况下，MVP 0～2 约 3～4 周，MVP 3～5 约 3 周，总体约 6～7 周。时间只是规划基线；质量 Gate、真实模型速度和服务器条件优先。
 
 ## Issue 模板
 

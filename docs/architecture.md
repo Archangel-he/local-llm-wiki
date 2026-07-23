@@ -238,6 +238,7 @@ Internet
 
 ## 相关文档
 
+- [Karpathy / Obsidian 参考边界](karpathy-reference.md)
 - [业务流程](workflows.md)
 - [数据模型](data-model.md)
 - [Wiki Schema](wiki-schema.md)
