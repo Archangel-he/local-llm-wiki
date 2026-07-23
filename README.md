@@ -7,17 +7,25 @@
 项目首先在 Mac Studio 上通过 Ollama 和本地 27B 模型完成闭环验证，之后部署到阿里云服务器，并逐步支持多用户与团队协作。
 
 > [!IMPORTANT]
-> 项目目前处于设计与初始化阶段。本 README 描述目标架构、分阶段 MVP 和验收标准，代码与启动配置尚未全部实现。
+> 项目目前处于设计与初始化阶段。本文是项目入口；具体架构、流程、接口、测试和部署规范位于 [`docs/`](docs/)。
 
-## 核心理念
+## 核心闭环
 
-传统 RAG 通常在每次提问时重新检索和拼接文档片段；LLM Wiki 则把已经完成的归纳、关联和冲突检查保存在一个持续演化的知识层中。
+```text
+添加原始资料
+→ 保存不可变来源
+→ LLM 生成或更新 Wiki
+→ 建立链接、引用和关系图谱
+→ 用户阅读、提问和校验
+→ 有价值的结论经确认后写回 Wiki
+→ Lint 持续发现冲突、断链和知识缺口
+```
 
-- **Raw sources**：用户提供的原始资料，只读保存，作为事实来源。
-- **Wiki**：由 LLM 创建和维护的 Markdown 页面，包括主题、实体、摘要、引用和交叉链接。
-- **Schema**：约束 LLM 如何摄取、查询和维护 Wiki 的规则文件。
+传统 RAG 在每次提问时重新检索和拼接文档；LLM Wiki 则将已经完成的归纳、关联和冲突检查保存在一个持续演化的知识层中。
 
-人的工作是选择资料、提出问题和校验结果；模型负责归纳、归档、链接与日常维护。
+- **Raw sources**：不可变的原始资料，是事实来源。
+- **Wiki**：由 LLM 维护、由用户阅读和校验的 Markdown 知识层。
+- **Schema**：约束摄取、引用、链接、查询和维护的规则。
 
 ## 实施策略
 
@@ -25,96 +33,57 @@
 
 > **单用户产品体验，多用户数据基础。**
 
-第一版启动后自动进入默认用户和默认知识空间，不开发注册、登录、邀请和角色管理；但数据库、API、文件路径和任务从第一天就包含 `user_id` 与 `workspace_id`。
+MVP 0～2 自动进入默认用户和默认知识空间，优先验证“资料 → Wiki → 图谱 → 问答 → 维护”；但数据库、API、文件路径和任务从第一天就包含 `user_id` 与 `workspace_id`。MVP 3 再启用注册和多用户隔离，MVP 4 增加团队协作。
 
-这样既能尽快验证“资料 → Wiki → 问答 → 增量维护”的核心价值，也能避免后续增加多用户时重写存储和业务逻辑。
+关键边界：
 
-### 第一阶段暂不实现
+- PostgreSQL 是在线业务和 Wiki Markdown 正文/版本的权威数据库；
+- Raw 文件保存在本地存储或 OSS，上传后字节内容不可修改；
+- Wiki 可导出为 Obsidian-compatible Markdown Vault；
+- Redis + RQ 执行摄取、查询和 Lint 等后台任务；
+- MVP 2 使用 PostgreSQL FTS + `pg_trgm` 多语言回退，不提前引入向量数据库；
+- 模型只能返回结构化变更计划，不能直接写数据库或文件；
+- REST 处理命令和状态，SSE 处理流式回答与任务进度。
 
-- 注册、登录和找回密码；
-- 邀请成员和邮件通知；
-- Owner / Editor / Viewer 权限；
-- 管理后台和用户配额；
-- 多人并发编辑。
-
-### 第一阶段必须保留
-
-- PostgreSQL 作为业务主数据库；
-- 所有业务数据归属于 `workspace_id`；
-- 默认用户和默认知识空间；
-- 按知识空间隔离的文件路径；
-- 可替换的文件存储和模型服务接口；
-- 数据库迁移、后台任务和审计日志；
-- 跨知识空间访问测试。
-
-DuckDB 不再承担用户、权限和并发任务等在线业务数据；未来如有需要，可将其用于本地分析或数据导出。
-
-## 目标
-
-- 在 localhost 完成从资料摄取到 Wiki 问答的完整闭环。
-- 通过 Ollama 调用 Mac Studio 上的本地 27B 模型。
-- 将 Markdown、文本和 PDF 等资料摄取为结构化 Wiki。
-- 根据新增资料增量更新已有页面，而不是重复生成孤立摘要。
-- 回答问题时给出可追溯的 Wiki 页面和原始来源。
-- 检查矛盾、过期内容、孤立页面和缺失链接。
-- 从数据层支持用户、知识空间和团队权限隔离。
-- 使用 Docker Compose 统一管理本地与服务器环境。
-- 在核心闭环稳定后部署到阿里云服务器。
+这些决策及其权衡记录在 [`docs/decisions/`](docs/decisions/)。
 
 ## 系统架构
 
 ```mermaid
 flowchart LR
-    U["Browser"] --> F["HTML / CSS / JavaScript"]
-    F --> A["FastAPI API"]
+    U["Browser"] --> G["Caddy / Web gateway"]
+    G --> F["Vite + TypeScript frontend"]
+    G --> A["FastAPI"]
 
     A --> P[("PostgreSQL")]
-    A --> Q["Redis queue"]
+    A --> Q["Redis / RQ"]
     A --> S["Storage adapter"]
-    Q --> W["Background worker"]
-    W --> L["LLM adapter"]
+    Q --> W["Worker"]
+    W --> P
     W --> S
+    W --> L["LLM adapter"]
     L --> O["Ollama / model service"]
 
-    S --> FS["Local filesystem"]
+    S --> FS["Local storage"]
     S -. "production" .-> OSS["Alibaba Cloud OSS"]
-
-    subgraph APP["Docker Compose application"]
-        F
-        A
-        P
-        Q
-        W
-    end
-
-    subgraph MODEL["Model runtime"]
-        O
-    end
 ```
-
-### 技术选型
 
 | 层级 | 技术 | 职责 |
 | --- | --- | --- |
-| 前端 | Vite + TypeScript + Sigma.js | 文件管理、关系图谱、问答与 Wiki 阅读 |
-| API | FastAPI | 认证、权限、工作区、查询和任务编排 |
-| 业务数据库 | PostgreSQL | 用户、空间、来源、任务、页面元数据和审计记录 |
-| 任务队列 | Redis + Worker | 执行耗时的摄取、查询和 Lint 任务 |
-| 模型服务 | Ollama / 可替换模型接口 | 本地或服务器端模型推理 |
-| 知识载体 | Markdown | 保存可阅读、可导出和可版本化的 Wiki 内容 |
-| 文件存储 | 本地文件系统 → OSS | 保存不可变原始资料、附件和导出文件 |
-| 运行环境 | Docker Compose | 统一管理本地与服务器服务 |
+| 前端 | Vite + TypeScript + Sigma.js | 文件管理、关系图谱、问答和 Wiki 阅读 |
+| 网关 | Caddy | 静态资源、API 反向代理和生产 HTTPS |
+| API | FastAPI | 用户、空间、权限、命令和 SSE |
+| 数据库 | PostgreSQL | 用户、任务、Wiki Markdown、版本、链接和审计 |
+| 队列 | Redis + RQ | 异步任务、重试、超时和并发控制 |
+| 模型 | Ollama / LLM adapter | 本地或服务器端模型推理 |
+| 文件 | Local storage / OSS | 不可变来源、附件和导出文件 |
+| 部署 | Docker Compose | localhost 与单机服务器部署 |
 
-> [!NOTE]
-> 在 macOS 上，Ollama 原生运行可以直接使用 Metal。应用容器通过 `host.docker.internal:11434` 访问 Ollama。部署到阿里云后，可通过环境变量将模型切换为同机 Ollama 或独立推理服务。
+完整设计见 [`docs/architecture.md`](docs/architecture.md)。
 
-## 前端设计与实施策略
+## 前端工作区
 
-前端不等后端全部完成后再开始，但首轮只完成线框、数据契约和最小工程骨架；配色、动画、响应式和高级交互在核心闭环稳定后统一精修。
-
-### 桌面端主布局
-
-顶部区域暂时只预留，不提前锁定具体功能。工作区采用类似 Obsidian 的三栏结构：左侧文件管理，中间上方关系图谱、中间下方问答，右侧 Wiki 条目。
+顶部区域暂时只预留；桌面工作区采用类似 Obsidian 的布局：
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -122,552 +91,102 @@ flowchart LR
 ├──────────────┬─────────────────────────────┬─────────────────────────┤
 │ 文件管理      │ 关系图谱                     │ Wiki 条目                │
 │              │                             │                         │
-│ ▾ Raw        │ [全局图] [局部图] [筛选]     │ 页面标题                  │
-│ ▾ Wiki       │                             │ Markdown 正文             │
-│ ▾ Lint       │                             │ 来源与引用                 │
-│ ▾ Recent     ├─────────────────────────────┤ 双向链接                   │
-│              │ 问答区                       │ 版本记录                   │
+│ ▾ Raw        │ [全局图] [局部图] [筛选]     │ Markdown 正文             │
+│ ▾ Wiki       │                             │ 来源与引用                 │
+│ ▾ Lint       ├─────────────────────────────┤ 双向链接                   │
+│ ▾ Recent     │ 问答区                       │ 版本记录                   │
 │              │ [当前条目][局部图][全空间]   │                         │
 └──────────────┴─────────────────────────────┴─────────────────────────┘
 ```
 
-默认尺寸建议：
+MVP 0 只完成可拖动的线框和 Mock 数据；文件树、图谱、问答和 Wiki 在后续 MVP 中逐步接入。视觉主题、动画、移动端和高级聚类延后。
 
-- 左侧文件管理宽度为 240～280px；
-- 中间和右侧按约 60% / 40% 分配剩余空间；
-- 图谱和问答按约 65% / 35% 分配中间区域高度；
-- 左右和上下分隔线均可拖动；
-- 图谱、问答和 Wiki 均支持单独最大化；
-- 面板尺寸后续保存为用户偏好。
+完整交互见 [`docs/frontend.md`](docs/frontend.md)。
 
-移动端不属于早期 MVP 范围，优先保证桌面浏览器和 Mac Studio 上的使用体验。
+## 路线图
 
-### 面板联动
+| 阶段 | 可验证闭环 | 退出条件 |
+| --- | --- | --- |
+| MVP 0 | 一条命令启动全部基础服务和前端骨架 | 健康检查、迁移、持久化、Mock UI 全部通过 |
+| MVP 1 | Markdown/TXT → Raw → Wiki → 基础图谱 | 来源不可变、任务可重试、页面和关系可浏览 |
+| MVP 2 | PDF/资料增量 → 检索 → 问答 → 引用 → Lint | 已知可回答、未知会拒答、冲突不会被覆盖 |
+| MVP 3 | 两个用户和多个知识空间 | 跨空间访问全部被拒绝，并发任务不串数据 |
+| MVP 4 | Owner 邀请 Editor/Viewer 协作 | 权限矩阵、版本和并发冲突测试通过 |
+| MVP 5 | localhost 环境部署到阿里云 | HTTPS、备份恢复、生产 E2E 和监控通过 |
 
-```text
-左侧选择资料或 Wiki
-→ 图谱定位相关节点
-→ 右侧打开对应条目
-→ 问答区选择当前条目、局部图或全空间作为范围
-→ 点击回答引用
-→ 右侧跳转页面，图谱同步高亮
-```
-
-- 点击 Raw 文件：右侧显示只读来源预览，图谱突出由它生成或影响的 Wiki 页面。
-- 点击 Wiki 文件：右侧打开条目，图谱切换到该页面的局部关系图。
-- 点击图谱节点：右侧打开对应条目，并将其设置为问答的当前上下文。
-- 点击图谱边：右侧展示该关系对应的 Wiki Link、来源或冲突证据。
-- 点击问答引用：右侧跳转到引用页面或来源，图谱定位对应节点。
-
-左侧展示当前知识空间内的逻辑目录，不直接暴露服务器文件系统：
-
-```text
-Raw Sources
-Wiki
-Lint Issues
-Recent
-Favorites
-Trash
-```
-
-### 关系图谱
-
-图谱是核心功能，不作为后期装饰。计划使用：
-
-```text
-Sigma.js + Graphology + ForceAtlas2 + Web Worker
-```
-
-- Sigma.js 使用 WebGL 渲染节点和边；
-- Graphology 保存前端图数据并提供图算法；
-- ForceAtlas2 提供类似 Obsidian 的力导向布局；
-- 布局计算放入 Web Worker，避免阻塞 Wiki 阅读和问答。
-
-第一版只显示有确定证据的关系：
-
-| 关系类型 | 含义 |
-| --- | --- |
-| `wikilink` | Wiki 页面之间的显式链接 |
-| `citation` | Wiki 页面引用原始资料 |
-| `derived_from` | Wiki 页面由哪些来源生成 |
-
-`related`、`contradicts` 等模型推断关系必须保存证据后才能显示，避免图谱充满无法解释的边。
-
-关系保存在 PostgreSQL 的 `wiki_links` 中，并始终包含 `workspace_id`、源页面、目标页面、关系类型、证据和版本信息。不需要在早期引入 Neo4j。
-
-### 前端开发节奏
-
-- **MVP 0**：建立三栏骨架、可拖动面板和 Mock 数据，不追求视觉完成度。
-- **MVP 1**：接入真实文件树、任务状态、Wiki 渲染和最小图谱。
-- **MVP 2**：接入问答、引用跳转、全局/局部图、筛选和 Lint 联动。
-- **MVP 3**：接入登录、知识空间切换和数据隔离状态。
-- **MVP 4**：接入成员、角色、版本和并发冲突 UI。
-- **MVP 5**：完成视觉统一、错误状态、生产 E2E 和必要的响应式适配。
-
-可以延后到核心闭环稳定后再做：主题、动画、快捷键、移动端、高级聚类、布局个性化和新手引导。
-
-## 数据隔离
-
-即使第一版只有一个用户，也使用完整的隔离关系：
-
-```text
-User
-└── Workspace
-    ├── Sources
-    ├── Ingest Jobs
-    ├── Wiki Pages
-    ├── Citations
-    └── Audit Logs
-```
-
-计划中的核心数据表：
-
-```text
-users
-workspaces
-memberships
-sources
-ingest_jobs
-wiki_pages
-wiki_revisions
-wiki_links
-citations
-audit_logs
-```
-
-本地文件也必须按空间隔离：
-
-```text
-storage/workspaces/<workspace_id>/raw/
-storage/workspaces/<workspace_id>/wiki/
-storage/workspaces/<workspace_id>/exports/
-```
-
-禁止使用全局 `workspace/raw`、全局当前用户或不带 `workspace_id` 的资料查询。
-
-## 核心工作流程
-
-### Ingest — 摄取
-
-1. 用户将资料上传到指定知识空间。
-2. 系统计算哈希，通过存储接口保存不可变原文件。
-3. PostgreSQL 记录来源和任务，Worker 异步处理任务。
-4. 模型提取关键信息，生成或更新空间内的 Wiki 页面。
-5. 更新空间的 `index.md`，并追加摄取审计记录。
-
-### Query — 查询
-
-1. 校验用户是否有权访问指定知识空间。
-2. 读取空间内的 Wiki 索引，定位相关页面。
-3. 基于已积累的知识回答，必要时回溯原始资料。
-4. 返回页面级和来源级引用；未知信息必须明确拒答。
-
-### Lint — 维护
-
-定期检查：
-
-- 相互矛盾或已被新资料取代的结论；
-- 没有入链的孤立页面；
-- 被频繁提及但尚无独立页面的概念；
-- 缺失来源或交叉引用的陈述；
-- 断开的 Wiki 链接；
-- 长期未更新、需要重新核验的内容。
-
-## 分阶段 MVP
-
-每个阶段都必须形成“输入 → 处理 → 输出 → 自动验证”的完整闭环。前一阶段未通过验收，不进入下一阶段。
-
-### MVP 0：单用户工程基础
-
-目标：应用可以完整启动，但暂时没有登录界面。
-
-启动时自动创建：
-
-```text
-default-user
-└── default-workspace
-```
-
-交付内容：
-
-- FastAPI、PostgreSQL、Redis、Worker 和 Vite + TypeScript 前端；
-- `GET /api/health`；
-- Alembic 数据库迁移；
-- 默认用户与默认空间初始化；
-- 本地存储适配器；
-- Ollama 连接检查；
-- 三栏可拖动前端骨架；
-- Mock 文件树、图谱、问答和 Wiki 条目；
-- Docker Compose 持久化卷。
-
-闭环测试：
-
-```text
-docker compose up
-→ 自动创建默认用户和空间
-→ 三栏骨架显示 Mock 文件、图谱、问答和 Wiki
-→ 页面显示 API、数据库、队列和 Ollama 状态
-→ 重启容器
-→ 默认空间和测试数据仍然存在
-```
-
-验收标准：
-
-- 所有服务可以一条命令启动；
-- Ollama 不可用时应用仍可启动，并明确展示错误状态；
-- 数据库迁移可以从空库执行；
-- 重复初始化不会产生多个默认用户或空间；
-- 调整面板尺寸不会破坏图谱、问答和 Wiki 的显示。
-
-### MVP 1：单用户文档摄取
-
-目标：验证最核心的“资料变成 Wiki”。
-
-```text
-上传 TXT/Markdown
-→ 保存不可变原文件
-→ Worker 调用 Ollama
-→ 生成 Wiki 页面
-→ 更新 index.md 和审计记录
-→ 左侧文件树出现资料和 Wiki
-→ 中间图谱出现节点和关系
-→ 点击节点在右侧浏览 Wiki
-```
-
-验收标准：
-
-- 原始文件哈希保持不变；
-- 重复上传相同文件不会生成重复来源；
-- Wiki 页面包含可回溯的来源引用；
-- 任务状态依次经过 `queued`、`running`、`completed`；
-- 页面、来源和任务均属于默认 `workspace_id`；
-- 修改 URL 中的 `workspace_id` 不能访问其他或不存在的空间；
-- 图谱至少显示 Wiki 页面节点和有证据的链接；
-- 点击节点能在右侧打开正确条目；
-- 点击来源能显示只读预览并高亮相关 Wiki 节点；
-- 重启应用后仍可浏览 Wiki。
-
-### MVP 2：问答、增量更新与 Lint
-
-目标：在单用户环境完成 LLM Wiki 的全部核心价值验证。
-
-查询闭环：
-
-```text
-输入问题
-→ 搜索当前空间 Wiki
-→ 生成答案
-→ 返回并打开引用
-→ 右侧跳转 Wiki，图谱定位对应节点
-```
-
-增量闭环：
-
-```text
-上传第二份相关资料
-→ 找到已有主题页
-→ 更新而不是复制页面
-→ 保留两份来源
-→ 标记新旧资料冲突
-```
-
-Lint 闭环：
-
-```text
-执行 Lint
-→ 发现断链、孤立页面和缺失来源
-→ 用户打开具体问题
-```
-
-验收标准：
-
-- 已知问题返回正确答案和有效引用；
-- 未知问题明确说明当前资料无法确定；
-- 相关新资料更新既有主题页，不制造重复主题；
-- 冲突信息不会被静默覆盖；
-- Lint 至少能报告断链、孤立页面和缺失来源；
-- 支持全局图和当前页面一至三层局部图；
-- 问答可选择当前条目、局部图或整个空间作为范围；
-- 孤立节点、断链和冲突可以从图谱进入对应 Lint 问题；
-- Query、Ingest 和 Lint 都留下审计记录。
-
-### MVP 3：真正的多用户
-
-目标：在不修改 Wiki 核心引擎的前提下增加身份与数据隔离。
-
-交付内容：
-
-- 注册、登录和退出；
-- 安全的会话 Cookie；
-- 一个用户可以创建多个知识空间；
-- 前端可以切换知识空间，文件树、图谱、问答和 Wiki 同步切换；
-- API、搜索、下载和任务均进行权限校验；
-- 上传和后台任务支持多个用户并发提交。
-
-关键隔离测试：
-
-```text
-Alice 创建 Workspace A
-Bob 创建 Workspace B
-Alice 上传私有资料
-Bob 请求 Alice 的资料、页面、任务和文件
-→ 全部返回 403 或 404
-```
-
-验收标准：
-
-- Alice 与 Bob 可以同时上传，任务和结果不会串数据；
-- Query 不能检索到其他空间的页面；
-- 原始文件和导出文件不能绕过 API 权限访问；
-- 删除一个用户的测试空间不会影响其他空间。
-
-### MVP 4：团队协作
-
-目标：允许多个用户共同维护一个知识空间。
-
-计划角色：
-
-| 角色 | 浏览/查询 | 上传/维护 | 管理成员/空间 |
-| --- | --- | --- | --- |
-| Owner | ✅ | ✅ | ✅ |
-| Editor | ✅ | ✅ | ❌ |
-| Viewer | ✅ | ❌ | ❌ |
-
-闭环测试：
-
-```text
-Owner 创建空间并邀请 Editor、Viewer
-→ Editor 上传并更新 Wiki
-→ Viewer 可以浏览和查询
-→ Viewer 尝试上传时被拒绝
-→ Owner 可以查看完整审计记录
-```
-
-验收标准：
-
-- 邀请、接受、退出空间形成完整闭环；
-- 每个 API 都通过角色权限矩阵测试；
-- Wiki 更新保留版本；
-- 并发修改使用版本号检测冲突，不允许静默覆盖。
-
-### MVP 5：阿里云部署
-
-目标：将本地验证过的相同应用部署到老师的阿里云服务器。
-
-迁移关系：
-
-```text
-localhost                  Alibaba Cloud
-──────────────────────     ──────────────────────
-Local filesystem       →   Data disk or OSS
-localhost URL          →   Domain + HTTPS
-Native Ollama          →   Server Ollama or model service
-Docker Compose         →   Docker Compose on ECS
-Local backup           →   Scheduled off-host backup
-```
-
-验收闭环：
-
-```text
-全新服务器执行部署
-→ 完成数据库迁移
-→ 通过 HTTPS 注册两个测试用户
-→ 上传、摄取、查询和 Lint
-→ 执行备份
-→ 清空测试环境并恢复
-→ Wiki、来源和引用仍然完整
-```
-
-生产环境最低要求：
-
-- 只公开 Web 所需的 80/443 端口；
-- PostgreSQL、Redis、对象存储和 Ollama 不直接暴露到公网；
-- SSH 只允许可信 IP；
-- 使用 HTTPS、安全 Cookie、上传大小限制和请求限流；
-- 数据库、原始资料和 Wiki 定期异机备份；
-- 使用环境变量或 Secret 管理密码和密钥；
-- 上线前确认服务器 CPU、内存、GPU、显存、磁盘和操作系统。
-
-模型是否与应用部署在同一台服务器，取决于老师服务器的硬件。业务代码只依赖统一的 `LLM_BASE_URL`，因此无需绑定具体部署方式。
-
-阿里云相关参考：
-
-- [ECS 安全组规则](https://help.aliyun.com/zh/ecs/user-guide/security-group-rules/)
-- [为 Web 服务配置 HTTPS](https://help.aliyun.com/zh/ecs/user-guide/ssl)
-- [阿里云 GPU 实例规格](https://help.aliyun.com/zh/ecs/user-guide/gpu-accelerated-compute-optimized-and-vgpu-accelerated-instance-families-1)
-- [通过 HTTPS 访问 OSS](https://help.aliyun.com/zh/oss/user-guide/access-oss-by-https-protocol)
+详细范围、依赖、分工和验收命令见 [`docs/roadmap.md`](docs/roadmap.md)。
 
 ## 四人分工
 
-成员不与固定账号绑定，按 A、B、C、D 四个角色协作；团队可以根据实际专长交换角色。
+成员不绑定固定账号，按 A、B、C、D 四个角色协作，可根据实际专长交换角色。
 
-| 角色 | 主要职责 | 主要目录 |
-| --- | --- | --- |
-| A：架构与集成 | 架构、Docker、CI、接口契约、版本验收和云端部署 | `docker-compose.yml`、`.github/`、集成测试 |
-| B：后端与数据 | FastAPI、PostgreSQL、数据模型、认证和权限 | `backend/api/`、`backend/models/`、`migrations/` |
-| C：LLM 与 Wiki | Ollama、Worker、Ingest、Query、增量更新和 Lint | `backend/services/`、`backend/worker/`、Schema |
-| D：前端与测试 | 三栏工作区、关系图谱、问答联动、Wiki 阅读、测试资料和 E2E | `frontend/`、`tests/e2e/`、用户文档 |
+| 角色 | 主要职责 |
+| --- | --- |
+| A：架构与集成 | Docker、CI、接口契约、版本验收和云端部署 |
+| B：后端与数据 | FastAPI、PostgreSQL、数据模型、认证和权限 |
+| C：LLM 与 Wiki | Ollama、RQ Worker、Ingest、Query、Schema 和 Lint |
+| D：前端与测试 | 三栏工作区、关系图谱、问答联动、E2E 和用户文档 |
 
-### 各阶段任务
-
-| 阶段 | A | B | C | D |
-| --- | --- | --- | --- | --- |
-| MVP 0 | Compose、CI、集成验收 | 数据模型、Health API | Ollama 与 Worker 骨架 | 三栏布局、Mock 图谱、E2E 骨架 |
-| MVP 1 | 摄取与图谱契约 | 上传、哈希、任务、Graph API | Wiki、链接与索引 | 文件树、基础图谱、Wiki 阅读 |
-| MVP 2 | 图谱验收数据集 | Query API、检索、局部图 | 引用、增量更新、Lint | 问答引用、图谱筛选和 Lint 联动 |
-| MVP 3 | 安全验收 | 注册、会话、空间隔离 | 任务空间隔离 | 登录和知识空间切换 |
-| MVP 4 | 权限矩阵验收 | 成员和角色 API | Wiki 版本与冲突 | 邀请、成员和版本 UI |
-| MVP 5 | 部署、HTTPS、备份 | 数据迁移与恢复 | 模型部署与质量验证 | 生产 E2E 和使用文档 |
-
-### 协作原则
+协作规则：
 
 - 每个 MVP 建立一个 GitHub Milestone；
 - 每个阶段拆成 A、B、C、D 四个主 Issue；
-- `main` 始终保持可启动和测试通过；
-- 使用短生命周期分支和 Pull Request；
 - API 与数据结构先确定，前端使用 Mock API 并行开发；
-- 跨角色修改使用独立提交，避免多人同时重构相同文件。
+- 使用短生命周期分支和 Pull Request；
+- `main` 始终保持可启动和测试通过；
+- 前一阶段验收未通过，不进入下一阶段。
 
-## 计划中的目录结构
-
-```text
-local-llm-wiki/
-├── backend/
-│   ├── api/                 # FastAPI 路由
-│   ├── core/                # 配置、认证和权限
-│   ├── models/              # PostgreSQL 数据模型
-│   ├── services/            # Ingest、Query、Lint 和存储接口
-│   └── worker/              # 后台任务
-├── frontend/                # Vite + TypeScript 前端
-│   └── src/
-│       ├── layout/          # 三栏工作区和可拖动面板
-│       ├── files/           # 文件管理
-│       ├── graph/           # Sigma.js 关系图谱
-│       ├── chat/            # 问答和引用
-│       └── wiki/            # Wiki 阅读与版本
-├── migrations/              # Alembic 数据库迁移
-├── storage/                 # 本地开发数据，不提交到 Git
-├── tests/
-│   ├── fixtures/            # 固定验收资料
-│   ├── integration/
-│   └── e2e/
-├── .env.example
-├── Dockerfile
-└── docker-compose.yml
-```
-
-## 计划中的 API
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `GET` | `/api/health` | 检查应用依赖状态 |
-| `POST` | `/api/auth/register` | 注册用户，MVP 3 启用 |
-| `POST` | `/api/auth/login` | 登录，MVP 3 启用 |
-| `GET` | `/api/workspaces` | 获取有权访问的知识空间 |
-| `POST` | `/api/workspaces` | 创建知识空间 |
-| `POST` | `/api/workspaces/{id}/sources` | 上传原始资料 |
-| `GET` | `/api/workspaces/{id}/jobs/{job_id}` | 获取任务状态 |
-| `POST` | `/api/workspaces/{id}/query` | 查询 Wiki |
-| `POST` | `/api/workspaces/{id}/lint` | 检查 Wiki 健康状态 |
-| `GET` | `/api/workspaces/{id}/wiki` | 获取 Wiki 页面列表 |
-| `GET` | `/api/workspaces/{id}/wiki/{path}` | 读取指定 Wiki 页面 |
-| `GET` | `/api/workspaces/{id}/graph` | 获取空间全局关系图 |
-| `GET` | `/api/workspaces/{id}/graph?scope=local&center={page_id}&depth=1` | 获取页面局部关系图 |
-
-## 预期启动方式
+## 目标启动方式
 
 以下命令代表完成 MVP 0 后的目标体验，目前尚不可用。
-
-### 环境要求
-
-- macOS、Linux 或 Windows + WSL2；
-- Docker 与 Docker Compose；
-- 本地模型模式需要 [Ollama](https://ollama.com/)；
-- 足够运行所选模型的内存、显存和磁盘空间。
-
-### 启动
 
 ```bash
 git clone https://github.com/Archangel-he/local-llm-wiki.git
 cd local-llm-wiki
 
 cp .env.example .env
-# 在 .env 中配置已安装的模型
-
 docker compose up --build
 ```
 
-启动后计划访问：
+计划访问地址：
 
 - Web：<http://localhost:8000>
-- API 文档：<http://localhost:8000/docs>
+- API：<http://localhost:8000/api>
+- API 文档：<http://localhost:8000/api/docs>
 - 健康检查：<http://localhost:8000/api/health>
 
-计划中的关键环境变量：
+在 macOS 上，Ollama 默认原生运行以使用 Metal；容器通过 `host.docker.internal:11434` 访问模型。阿里云部署时通过 `LLM_BASE_URL` 切换为同机或独立模型服务。
 
-```dotenv
-DATABASE_URL=postgresql+psycopg://wiki:wiki@postgres:5432/wiki
-REDIS_URL=redis://redis:6379/0
-STORAGE_BACKEND=local
-LOCAL_STORAGE_PATH=/app/storage
-LLM_PROVIDER=ollama
-LLM_BASE_URL=http://host.docker.internal:11434
-LLM_MODEL=<your-local-model>
-```
+## 文档索引
 
-## 测试策略
-
-LLM 输出具有随机性，因此测试分为两层：
-
-1. **确定性自动测试**：使用 Mock Ollama 验证 API、权限、存储、任务和引用结构。
-2. **真实模型冒烟测试**：在 Mac Studio 或模型服务器上验证结构约束和事实要求，不逐字比较生成文本。
-
-计划为每个阶段提供统一验收命令：
-
-```bash
-make verify-mvp0
-make verify-mvp1
-make verify-mvp2
-make verify-mvp3
-make verify-mvp4
-make verify-mvp5
-
-make test-ollama
-```
-
-固定验收资料应覆盖：
-
-- 一个可以准确回答的事实；
-- 一个资料中不存在的问题；
-- 两份存在更新或冲突的来源；
-- 一个断开的 Wiki 链接；
-- 一个包含四个节点、两条边和一个孤立节点的图谱；
-- 两个相互隔离的用户和知识空间。
-
-图谱前端还必须验证：
-
-- 点击节点可以打开正确 Wiki；
-- 点击问答引用可以定位对应节点；
-- 删除 Wiki Link 后相关边自动消失；
-- 不同知识空间的节点不会混入同一图谱；
-- 500～1000 个固定测试节点下仍可缩放、筛选和点击；
-- ForceAtlas2 在 Web Worker 中运行，不阻塞输入和阅读。
+| 文档 | 内容 |
+| --- | --- |
+| [`docs/roadmap.md`](docs/roadmap.md) | MVP 0～5、依赖、闭环、分工和退出条件 |
+| [`docs/workflows.md`](docs/workflows.md) | 摄取、查询、写回、Lint、协作、导出和故障恢复流程 |
+| [`docs/architecture.md`](docs/architecture.md) | 系统上下文、组件、数据流和部署拓扑 |
+| [`docs/data-model.md`](docs/data-model.md) | 权威数据、表结构、事务、状态和删除语义 |
+| [`docs/wiki-schema.md`](docs/wiki-schema.md) | 页面格式、LLM 变更协议、引用、冲突和 Lint |
+| [`docs/api-contract.md`](docs/api-contract.md) | REST、SSE、错误格式、图谱和权限约定 |
+| [`docs/frontend.md`](docs/frontend.md) | 三栏布局、图谱、面板联动和开发节奏 |
+| [`docs/testing.md`](docs/testing.md) | 固定数据集、自动测试、真实模型和性能门槛 |
+| [`docs/deployment.md`](docs/deployment.md) | localhost、阿里云、HTTPS、备份恢复和运维 |
+| [`docs/decisions/`](docs/decisions/) | 关键架构决策与替代方案 |
 
 ## 设计原则
 
-- **Core first**：先验证资料摄取、Wiki、问答和维护闭环。
-- **Multi-tenant ready**：界面可以先单用户，数据结构不能是全局单用户。
-- **Source first**：原始资料不可变，生成内容必须能回溯来源。
-- **Markdown first**：Wiki 内容可阅读、导出、迁移和版本化。
-- **Incremental**：新增资料应更新既有知识结构，而不是制造重复页面。
-- **Local first, cloud ready**：本地验证和云端部署使用相同接口与配置方式。
-- **Inspectable**：模型写入、引用、权限和维护动作都留下记录。
-- **Simple first**：在规模确实需要之前，不引入向量数据库和复杂编排平台。
+- **Core first**：先验证摄取、Wiki、图谱、问答和维护闭环。
+- **Multi-tenant ready**：界面可以先单用户，数据不能是全局单用户。
+- **Source first**：原始资料不可变，生成内容必须回溯来源。
+- **Markdown first**：Wiki 内容始终是 Markdown，并可导出为普通文件。
+- **Incremental**：新增资料更新既有知识，而不是制造重复页面。
+- **Local first, cloud ready**：本地与云端使用相同接口和配置。
+- **Inspectable**：模型、权限、引用和维护动作都留下记录。
+- **Simple first**：需求未证明前不引入向量数据库、Neo4j 或集群编排。
 
 ## 致谢
 
-本项目源于 Andrej Karpathy 提出的 [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 模式。原始构想强调三层结构：不可变的原始资料、由 LLM 维护的 Markdown Wiki，以及约束维护流程的 Schema。
+本项目源于 Andrej Karpathy 提出的 [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 模式。
 
 ## License
 
-暂未指定开源许可证。在许可证提交前，仓库内容默认保留全部权利。
+暂未指定开源许可证。应在 MVP 0 结束前完成许可证决策；在此之前，仓库内容默认保留全部权利。
