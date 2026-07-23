@@ -46,7 +46,7 @@ verify-mvp0: ## Run MVP 0 gate checks
 	@echo "4. Checking database is migrated..."
 	@docker compose exec api alembic upgrade head 2>&1 | grep -q "skipping" || true
 	@echo "5. Checking seed data exists..."
-	@docker compose exec api python -c "from app.database import SessionLocal; db=SessionLocal(); print('seeded' if db.execute('SELECT 1 FROM users LIMIT 1').fetchone() else 'missing')" | grep -q "seeded" && echo "PASS: default user exists" || (docker compose exec api python -m app.seed && echo "PASS: seeded")
+	@docker compose exec api python -c "from sqlalchemy import text; from app.database import SessionLocal; db=SessionLocal(); print('seeded' if db.execute(text('SELECT 1 FROM users LIMIT 1')).fetchone() else 'missing')" | grep -q "seeded" && echo "PASS: default user exists" || (docker compose exec api python -m app.seed && echo "PASS: seeded")
 	@echo "=== MVP 0 Gate PASSED ==="
 
 logs: ## Show logs
