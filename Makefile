@@ -1,4 +1,4 @@
-.PHONY: help up down build migrate seed lint test clean
+.PHONY: help up down build migrate seed init test-unit test-integration lint verify-mvp0 logs clean frontend-build
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -23,7 +23,11 @@ init: migrate seed ## Run migrations + seed
 
 test-unit: ## Run unit tests (requires compose running)
 	docker compose exec api pip install -r dev-requirements.txt -q
-	docker compose exec api python -m pytest tests/ -v
+	docker compose exec api python -m pytest tests/ -m "not integration" -v
+
+test-integration: ## Run Redis integration tests against disposable DB 15
+	docker compose exec api pip install -r dev-requirements.txt -q
+	docker compose exec -e REDIS_TEST_URL=redis://redis:6379/15 api python -m pytest tests/ -m integration -v
 
 lint: ## Run Python linting
 	docker compose exec api pip install -r dev-requirements.txt -q
