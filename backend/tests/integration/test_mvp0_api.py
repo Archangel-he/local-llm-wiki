@@ -106,3 +106,10 @@ def test_validation_errors_use_stable_shape():
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
     assert response.headers["x-request-id"].startswith("req_")
+
+
+def test_health_uses_the_persisted_workspace_default_profile():
+    response = TestClient(app).get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["components"]["llm"] == "ok"

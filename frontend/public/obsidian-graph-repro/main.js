@@ -31,6 +31,7 @@ let autoFit = true;
 let renderedFocusNode = null;
 let focusBlend = 0;
 let previousRenderTime = performance.now();
+let cameraFocusHandle = null;
 
 function resize() {
   deviceScale = window.devicePixelRatio || 1;
@@ -117,6 +118,43 @@ function fitCameraToNodes() {
   );
   camera.x = -((minX + maxX) / 2) * camera.scale;
   camera.y = -((minY + maxY) / 2) * camera.scale;
+}
+
+function focusNode(pageId) {
+  const node = [...nodes.values()].find((candidate) => candidate.pageId === pageId);
+  if (!node) return;
+  const alreadySelected = selectedNode?.id === node.id;
+
+  selectedNode = node;
+  renderedFocusNode = node;
+  focusBlend = 1;
+  autoFit = false;
+  canvas.dataset.selectedNode = node.id;
+  if (alreadySelected) {
+    changed();
+    return;
+  }
+
+  if (cameraFocusHandle !== null) cancelAnimationFrame(cameraFocusHandle);
+  const startedAt = performance.now();
+  const startX = camera.x;
+  const startY = camera.y;
+  const targetX = -node.x * camera.scale;
+  const targetY = -node.y * camera.scale;
+
+  const animate = (now) => {
+    const progress = Math.min(1, (now - startedAt) / 420);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    camera.x = startX + (targetX - startX) * eased;
+    camera.y = startY + (targetY - startY) * eased;
+    changed();
+    if (progress < 1) {
+      cameraFocusHandle = requestAnimationFrame(animate);
+    } else {
+      cameraFocusHandle = null;
+    }
+  };
+  cameraFocusHandle = requestAnimationFrame(animate);
 }
 
 function findNodeAt(x, y) {
@@ -335,8 +373,15 @@ function setGraphData(message) {
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.source !== parent) return;
-  if (event.data?.type !== "graph-data") return;
-  if (!Array.isArray(event.data.nodes) || !Array.isArray(event.data.links)) {
+  if (event.data?.type === "graph-focus-node") {
+    focusNode(event.data.pageId);
+    return;
+  }
+  if (
+    event.data?.type !== "graph-data" ||
+    !Array.isArray(event.data.nodes) ||
+    !Array.isArray(event.data.links)
+  ) {
     return;
   }
   setGraphData(event.data);

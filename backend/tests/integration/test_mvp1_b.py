@@ -99,6 +99,9 @@ def test_wiki_batch_resolves_forward_links_and_commits_atomically():
 
     first_page_id = uuid.uuid4()
     second_page_id = uuid.uuid4()
+    suffix = uuid.uuid4().hex[:8]
+    first_slug = f"project-aurora-{suffix}"
+    second_slug = f"lin-{suffix}"
     batch = WikiOperationBatch.model_validate(
         {
             "schema_version": 1,
@@ -107,12 +110,15 @@ def test_wiki_batch_resolves_forward_links_and_commits_atomically():
                 {
                     "action": "create_page",
                     "page_id": first_page_id,
-                    "title": "Project Aurora",
-                    "slug": "project-aurora",
+                    "title": f"Project Aurora {suffix}",
+                    "slug": first_slug,
                     "page_type": "topic",
-                    "aliases": ["Aurora Project", "极光项目"],
+                    "aliases": [
+                        f"Aurora Project {suffix}",
+                        f"极光项目 {suffix}",
+                    ],
                     "markdown": "# Project Aurora",
-                    "links": [{"target_slug": "lin", "type": "wikilink"}],
+                    "links": [{"target_slug": second_slug, "type": "wikilink"}],
                     "citations": [
                         {"source_id": str(source_id), "locator": "paragraph-1"}
                     ],
@@ -120,8 +126,8 @@ def test_wiki_batch_resolves_forward_links_and_commits_atomically():
                 {
                     "action": "create_page",
                     "page_id": second_page_id,
-                    "title": "Lin",
-                    "slug": "lin",
+                    "title": f"Lin {suffix}",
+                    "slug": second_slug,
                     "page_type": "entity",
                     "aliases": [],
                     "markdown": "# Lin",
@@ -151,6 +157,9 @@ def test_wiki_batch_resolves_forward_links_and_commits_atomically():
 
 def test_alias_conflict_rolls_back_entire_wiki_batch():
     job_id, source_id = _create_running_job()
+    suffix = uuid.uuid4().hex[:8]
+    reserved_alias = f"Reserved Alias {suffix}"
+    temporary_slug = f"temporary-page-{suffix}"
     with SessionLocal.begin() as db:
         existing_page = WikiPage(
             workspace_id=DEFAULT_WORKSPACE_ID,
@@ -177,8 +186,8 @@ def test_alias_conflict_rolls_back_entire_wiki_batch():
             PageAlias(
                 workspace_id=DEFAULT_WORKSPACE_ID,
                 page_id=existing_page.id,
-            alias_normalized=normalize_alias("Reserved Alias"),
-                alias_display="Reserved Alias",
+                alias_normalized=normalize_alias(reserved_alias),
+                alias_display=reserved_alias,
                 created_by_revision_id=existing_revision.id,
             )
         )
@@ -194,9 +203,9 @@ def test_alias_conflict_rolls_back_entire_wiki_batch():
                 {
                     "action": "create_page",
                     "title": "Temporary Page",
-                    "slug": "temporary-page",
+                    "slug": temporary_slug,
                     "page_type": "topic",
-                    "aliases": ["Reserved Alias"],
+                    "aliases": [reserved_alias],
                     "markdown": "# Must roll back",
                 }
             ],
@@ -211,5 +220,5 @@ def test_alias_conflict_rolls_back_entire_wiki_batch():
         assert db.scalar(
             select(func.count())
             .select_from(WikiPage)
-            .where(WikiPage.slug == "temporary-page")
+            .where(WikiPage.slug == temporary_slug)
         ) == 0

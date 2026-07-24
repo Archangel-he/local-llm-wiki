@@ -8,32 +8,56 @@ import {
   FolderClosed,
   FolderOpen,
   FolderPlus,
+  PackageOpen,
   Search,
   SortAsc,
   TriangleAlert,
+  Upload,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { defaultWorkspace, treeSections } from "../fixtures/workspace";
+import type { IngestJob } from "../mvp1/contracts";
+import type { TreeSection } from "../types";
+import { JobStatusPanel } from "./JobStatusPanel";
 
 interface FileExplorerProps {
   selectedPageId: string;
   onSelectPage: (pageId: string) => void;
+  sections?: TreeSection[];
+  jobs?: IngestJob[];
+  uploadMessage?: string | null;
+  uploadError?: string | null;
+  uploading?: boolean;
+  onUploadSource?: (file: File) => void;
+  onExportPreview?: () => void;
+  onRetryJob?: (jobId: string) => void;
+  onCancelJob?: (jobId: string) => void;
 }
 
 export function FileExplorer({
   selectedPageId,
   onSelectPage,
+  sections: suppliedSections = treeSections,
+  jobs = [],
+  uploadMessage = null,
+  uploadError = null,
+  uploading = false,
+  onUploadSource,
+  onExportPreview,
+  onRetryJob,
+  onCancelJob,
 }: FileExplorerProps) {
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState(
-    () => new Set(treeSections.map((section) => section.id)),
+    () => new Set(suppliedSections.map((section) => section.id)),
   );
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
 
   const sections = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return treeSections;
-    return treeSections
+    if (!normalized) return suppliedSections;
+    return suppliedSections
       .map((section) => ({
         ...section,
         children: section.children.filter((item) =>
@@ -41,7 +65,7 @@ export function FileExplorer({
         ),
       }))
       .filter((section) => section.children.length > 0);
-  }, [query]);
+  }, [query, suppliedSections]);
 
   const toggle = (sectionId: string) => {
     setExpanded((current) => {
@@ -85,6 +109,35 @@ export function FileExplorer({
           <button type="button" aria-label="新建笔记" title="新建笔记">
             <FilePlus2 />
           </button>
+          <button
+            type="button"
+            aria-label="Upload Markdown or TXT"
+            title="Upload source"
+            disabled={uploading}
+            onClick={() => uploadInputRef.current?.click()}
+          >
+            <Upload />
+          </button>
+          <input
+            ref={uploadInputRef}
+            className="sr-only"
+            type="file"
+            accept=".md,.txt,text/markdown,text/plain"
+            data-testid="source-upload-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onUploadSource?.(file);
+              event.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Preview Obsidian export"
+            title="Export preview"
+            onClick={onExportPreview}
+          >
+            <PackageOpen />
+          </button>
           <button type="button" aria-label="新建文件夹" title="新建文件夹">
             <FolderPlus />
           </button>
@@ -93,6 +146,14 @@ export function FileExplorer({
           </button>
         </div>
       </div>
+
+      <JobStatusPanel
+        jobs={jobs}
+        message={uploadMessage}
+        error={uploadError}
+        onRetry={onRetryJob}
+        onCancel={onCancelJob}
+      />
 
       {searching && (
         <div className="file-search">

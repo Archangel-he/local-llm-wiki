@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.ingest.pipeline import run_ingest_job
+from app.services.exports import run_export_job
 
 
 def probe_job(probe_id: str) -> dict[str, str]:
@@ -15,3 +16,9 @@ def ingest_job(job_id: str) -> None:
     """Execute one persisted ingest Job without accepting secrets or file data."""
 
     run_ingest_job(job_id)
+
+
+def export_job(job_id: str) -> None:
+    """Create one persisted Obsidian-compatible Vault export."""
+
+    run_export_job(job_id)

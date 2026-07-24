@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.exports import router as exports_router
 from .api.health import router as health_router
 from .api.jobs import router as jobs_router
 from .api.model_profiles import router as model_profiles_router
@@ -30,6 +31,7 @@ app.add_middleware(RequestIdMiddleware)
 install_error_handlers(app)
 
 app.include_router(health_router, prefix="/api")
+app.include_router(exports_router, prefix="/api")
 app.include_router(workspaces_router, prefix="/api")
 app.include_router(model_profiles_router, prefix="/api")
 app.include_router(sources_router, prefix="/api")

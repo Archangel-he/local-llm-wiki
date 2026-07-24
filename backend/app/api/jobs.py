@@ -15,6 +15,7 @@ from ..repositories.content import get_job, list_jobs
 from ..schemas import JobList, JobRead
 from ..seed import DEFAULT_USER_ID
 from ..services.content import enqueue_ingest_job
+from ..services.exports import enqueue_export_job
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/jobs", tags=["jobs"])
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
@@ -66,7 +67,12 @@ def retry_job(
         )
     )
     db.commit()
-    enqueue_ingest_job(db, item)
+    if item.job_type == "ingest":
+        enqueue_ingest_job(db, item)
+    elif item.job_type == "export":
+        enqueue_export_job(db, item)
+    else:
+        raise ApiError(409, "JOB_NOT_RETRYABLE", "This job type cannot be retried.")
     return JobRead.from_model(item)
 
 

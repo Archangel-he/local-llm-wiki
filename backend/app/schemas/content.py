@@ -38,7 +38,7 @@ class JobModelSnapshot(BaseModel):
     provider: str
     name: str | None
     endpoint_origin: str | None = None
-    adapter_version: str
+    adapter_version: str = "mvp1-v1"
 
 
 class JobRead(BaseModel):

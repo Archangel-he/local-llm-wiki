@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from app.schemas.content import JobModelSnapshot
 from app.services.model_profiles import InvalidModelProfile, normalize_base_url
 from app.services.wiki import normalize_alias, normalize_slug
 
@@ -30,3 +31,9 @@ def test_model_profile_rejects_credential_bearing_or_non_http_urls(url):
 
 def test_operation_ids_are_uuid_compatible():
     assert str(uuid.UUID(str(uuid.uuid4())))
+
+
+def test_legacy_job_snapshot_remains_readable():
+    snapshot = JobModelSnapshot.model_validate({"provider": "mock", "name": "mock"})
+
+    assert snapshot.adapter_version == "mvp1-v1"

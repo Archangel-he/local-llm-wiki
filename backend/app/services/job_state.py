@@ -13,16 +13,16 @@ class InvalidJobTransition(RuntimeError):
     pass
 
 
-def claim_ingest_job(db: Session, job_id: uuid.UUID) -> Job:
+def _claim_job(db: Session, job_id: uuid.UUID, job_type: str, label: str) -> Job:
     rejection: str | None = None
     with db.begin():
         job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
-        if job is None or job.job_type != "ingest":
-            raise InvalidJobTransition("Ingest job does not exist.")
+        if job is None or job.job_type != job_type:
+            raise InvalidJobTransition(f"{label} job does not exist.")
         if job.status == "cancel_requested":
             job.status = "cancelled"
             job.finished_at = datetime.now(timezone.utc)
-            rejection = "Ingest job was cancelled."
+            rejection = f"{label} job was cancelled."
         elif job.status not in {"queued", "retrying"}:
             raise InvalidJobTransition("Ingest job is not available for claiming.")
         elif job.attempt >= job.max_attempts:
@@ -40,6 +40,14 @@ def claim_ingest_job(db: Session, job_id: uuid.UUID) -> Job:
     if rejection is not None:
         raise InvalidJobTransition(rejection)
     return job
+
+
+def claim_ingest_job(db: Session, job_id: uuid.UUID) -> Job:
+    return _claim_job(db, job_id, "ingest", "Ingest")
+
+
+def claim_export_job(db: Session, job_id: uuid.UUID) -> Job:
+    return _claim_job(db, job_id, "export", "Export")
 
 
 def update_job_progress(

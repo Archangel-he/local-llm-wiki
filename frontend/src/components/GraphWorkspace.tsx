@@ -21,9 +21,11 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import Sigma from "sigma";
 import { EdgeArrowProgram, EdgeLineProgram } from "sigma/rendering";
-import { graphEdges, graphNodes } from "../fixtures/workspace";
+import type { GraphEdge, GraphNode } from "../types";
 
 interface GraphWorkspaceProps {
+  graphNodes: GraphNode[];
+  graphEdges: GraphEdge[];
   selectedPageId: string;
   onSelectPage: (pageId: string) => void;
   maximized: boolean;
@@ -62,16 +64,6 @@ const hoverPurple = "#7c6ee6";
 const neighborGray = "#4b4b50";
 
 const layoutScale = 100;
-const finalPositions = Object.fromEntries(
-  graphNodes.map((node) => [
-    node.id,
-    {
-      x: node.x * layoutScale,
-      y: node.y * layoutScale,
-      size: node.size,
-    },
-  ]),
-);
 
 function simulationForces(
   centerForce: number,
@@ -157,6 +149,8 @@ function SettingsGroup({
 }
 
 export function GraphWorkspace({
+  graphNodes,
+  graphEdges,
   selectedPageId,
   onSelectPage,
   maximized,
@@ -248,7 +242,21 @@ export function GraphWorkspace({
       },
       window.location.origin,
     );
-  }, []);
+  }, [graphEdges, graphNodes]);
+
+  useEffect(() => {
+    syncReproGraph();
+  }, [syncReproGraph]);
+
+  useEffect(() => {
+    reproFrameRef.current?.contentWindow?.postMessage(
+      {
+        type: "graph-focus-node",
+        pageId: selectedPageId,
+      },
+      window.location.origin,
+    );
+  }, [graphNodes, selectedPageId]);
 
   const triggerReproAction = useCallback((id: "reheat" | "reset") => {
     const button = reproFrameRef.current?.contentDocument?.getElementById(
@@ -280,13 +288,23 @@ export function GraphWorkspace({
 
     window.addEventListener("message", handleGraphMessage);
     return () => window.removeEventListener("message", handleGraphMessage);
-  }, [onSelectPage]);
+  }, [graphNodes, onSelectPage]);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const graph = new Graph();
     const now = window.performance.now();
+    const finalPositions = Object.fromEntries(
+      graphNodes.map((node) => [
+        node.id,
+        {
+          x: node.x * layoutScale,
+          y: node.y * layoutScale,
+          size: node.size,
+        },
+      ]),
+    );
     graphNodes.forEach((node, index) => {
       const target = finalPositions[node.id];
       graph.addNode(node.id, {
@@ -663,7 +681,7 @@ export function GraphWorkspace({
       graphRef.current = null;
       ensureAnimationRef.current = () => undefined;
     };
-  }, [onSelectPage, reducedMotion]);
+  }, [graphEdges, graphNodes, onSelectPage, reducedMotion]);
 
   useEffect(() => {
     simulationControlsRef.current = {
@@ -728,7 +746,7 @@ export function GraphWorkspace({
       },
       { duration: reducedMotion ? 0 : 560, easing: "cubicInOut" },
     );
-  }, [reducedMotion, selectedPageId]);
+  }, [graphNodes, reducedMotion, selectedPageId]);
 
   const zoom = (direction: "in" | "out") => {
     const camera = rendererRef.current?.getCamera();
@@ -992,8 +1010,8 @@ export function GraphWorkspace({
 
       <div className="graph-count">
         <CircleDot aria-hidden="true" />
-        <span>4 nodes</span>
-        <span>2 links</span>
+        <span>{graphNodes.length} nodes</span>
+        <span>{graphEdges.length} links</span>
       </div>
 
       {selectedEvidence && (

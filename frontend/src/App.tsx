@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { AskPanel } from "./components/AskPanel";
+import { ExportPreviewDialog } from "./components/ExportPreviewDialog";
 import { FileExplorer } from "./components/FileExplorer";
 import { GraphWorkspace } from "./components/GraphWorkspace";
 import { HealthPopover } from "./components/HealthPopover";
@@ -22,16 +23,15 @@ import { Ribbon } from "./components/Ribbon";
 import { SettingsDialog } from "./components/SettingsDialog";
 import {
   defaultWorkspace,
-  graphEdges,
-  graphNodes,
   modelProfileFixture,
-  wikiPages,
 } from "./fixtures/workspace";
 import { usePanelResize } from "./hooks/usePanelResize";
+import { useMvp1Workspace } from "./mvp1/useMvp1Workspace";
 
 type MaximizedPanel = "graph" | "ask" | "wiki" | null;
 
 function App() {
+  const workspace = useMvp1Workspace();
   const [selectedPageId, setSelectedPageId] = useState("page-a");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
@@ -63,8 +63,12 @@ function App() {
 
   const selectedPage = useMemo(
     () =>
-      wikiPages.find((page) => page.id === selectedPageId) ?? wikiPages[0],
-    [selectedPageId],
+      workspace.data.pages.find((page) => page.id === selectedPageId) ??
+      workspace.data.pages[0],
+    [selectedPageId, workspace.data.pages],
+  );
+  const defaultProfile = workspace.profiles.find(
+    (profile) => profile.id === workspace.defaultProfileId,
   );
 
   const selectPage = useCallback((pageId: string) => {
@@ -129,6 +133,15 @@ function App() {
             <FileExplorer
               selectedPageId={selectedPageId}
               onSelectPage={selectPage}
+              sections={workspace.treeSections}
+              jobs={workspace.data.jobs}
+              uploadMessage={workspace.uploadMessage}
+              uploadError={workspace.uploadError}
+              uploading={workspace.uploading}
+              onUploadSource={workspace.uploadSource}
+              onExportPreview={workspace.loadExportPreview}
+              onRetryJob={workspace.retryJob}
+              onCancelJob={workspace.cancelJob}
             />
             <div
               className="pane-resizer vertical"
@@ -178,6 +191,8 @@ function App() {
 
           <div className="editor-stack">
             <GraphWorkspace
+              graphNodes={workspace.data.graphNodes}
+              graphEdges={workspace.data.graphEdges}
               selectedPageId={selectedPageId}
               onSelectPage={selectPage}
               maximized={maximizedPanel === "graph"}
@@ -224,12 +239,14 @@ function App() {
               onKeyDown={rightPanel.onKeyDown}
               data-testid="right-resizer"
             />
-            <InspectorPanel
-              page={selectedPage}
-              onClose={() => setRightOpen(false)}
-              maximized={maximizedPanel === "wiki"}
-              onToggleMaximize={() => toggleMaximized("wiki")}
-            />
+            {selectedPage && (
+              <InspectorPanel
+                page={selectedPage}
+                onClose={() => setRightOpen(false)}
+                maximized={maximizedPanel === "wiki"}
+                onToggleMaximize={() => toggleMaximized("wiki")}
+              />
+            )}
           </>
         )}
       </div>
@@ -241,7 +258,7 @@ function App() {
           </button>
           <span>Local vault</span>
           <span className="status-separator" />
-          <span>{selectedPage.title}</span>
+          <span>{selectedPage?.title ?? "Loading vault..."}</span>
         </div>
         <div className="statusbar-right">
           <button
@@ -251,12 +268,17 @@ function App() {
           >
             <Bot aria-hidden="true" />
             <span>
-              {modelProfileFixture.name} · {modelProfileFixture.modelId}
+              {defaultProfile
+                ? `${defaultProfile.displayName} · ${defaultProfile.modelName}`
+                : `${modelProfileFixture.name} · ${modelProfileFixture.modelId}`}
             </span>
-            <i className="status-dot degraded" aria-hidden="true" />
+            <i
+              className={`status-dot ${defaultProfile?.status === "active" ? "ok" : "degraded"}`}
+              aria-hidden="true"
+            />
           </button>
-          <span>{graphNodes.length} nodes</span>
-          <span>{graphEdges.length} links</span>
+          <span>{workspace.data.graphNodes.length} nodes</span>
+          <span>{workspace.data.graphEdges.length} links</span>
           <div className="health-anchor">
             <button
               className="health-trigger"
@@ -276,6 +298,19 @@ function App() {
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        profiles={workspace.profiles}
+        defaultProfileId={workspace.defaultProfileId}
+        onCreateProfile={workspace.createProfile}
+        onTestProfile={workspace.testProfile}
+        onSetDefaultProfile={workspace.setDefaultProfile}
+      />
+      <ExportPreviewDialog
+        preview={workspace.exportPreview}
+        job={workspace.exportJob}
+        error={workspace.exportError}
+        downloadUrl={workspace.exportDownloadUrl}
+        onStartExport={workspace.startExport}
+        onClose={workspace.closeExportPreview}
       />
     </main>
   );
