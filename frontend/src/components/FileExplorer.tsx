@@ -30,6 +30,8 @@ interface FileExplorerProps {
   uploading?: boolean;
   onUploadSource?: (file: File) => void;
   onExportPreview?: () => void;
+  onRetryJob?: (jobId: string) => void;
+  onCancelJob?: (jobId: string) => void;
 }
 
 export function FileExplorer({
@@ -42,6 +44,8 @@ export function FileExplorer({
   uploading = false,
   onUploadSource,
   onExportPreview,
+  onRetryJob,
+  onCancelJob,
 }: FileExplorerProps) {
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState(
@@ -143,7 +147,13 @@ export function FileExplorer({
         </div>
       </div>
 
-      <JobStatusPanel jobs={jobs} message={uploadMessage} error={uploadError} />
+      <JobStatusPanel
+        jobs={jobs}
+        message={uploadMessage}
+        error={uploadError}
+        onRetry={onRetryJob}
+        onCancel={onCancelJob}
+      />
 
       {searching && (
         <div className="file-search">

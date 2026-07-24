@@ -2,6 +2,7 @@
 .env
 .understand-anything
 **/__pycache__
+**/.pytest_cache
 **/*.py[cod]
 **/*.egg-info
 frontend/node_modules

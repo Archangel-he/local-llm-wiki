@@ -140,6 +140,8 @@ function App() {
               uploading={workspace.uploading}
               onUploadSource={workspace.uploadSource}
               onExportPreview={workspace.loadExportPreview}
+              onRetryJob={workspace.retryJob}
+              onCancelJob={workspace.cancelJob}
             />
             <div
               className="pane-resizer vertical"

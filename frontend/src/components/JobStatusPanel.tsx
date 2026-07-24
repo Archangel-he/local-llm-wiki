@@ -5,10 +5,14 @@ export function JobStatusPanel({
   jobs,
   message,
   error,
+  onRetry,
+  onCancel,
 }: {
   jobs: IngestJob[];
   message: string | null;
   error: string | null;
+  onRetry?: (jobId: string) => void;
+  onCancel?: (jobId: string) => void;
 }) {
   const job = jobs[0];
   if (!job && !message && !error) return null;
@@ -53,6 +57,24 @@ export function JobStatusPanel({
             />
           </div>
           {message && <p className="job-message" role="status">{message}</p>}
+          <div className="job-actions">
+            {job.status === "failed" && job.attempt < job.maxAttempts && (
+              <button type="button" onClick={() => onRetry?.(job.id)}>
+                Retry
+              </button>
+            )}
+            {["queued", "running", "retrying", "cancel_requested"].includes(
+              job.status,
+            ) && (
+              <button
+                type="button"
+                disabled={job.status === "cancel_requested"}
+                onClick={() => onCancel?.(job.id)}
+              >
+                {job.status === "cancel_requested" ? "Cancelling…" : "Cancel"}
+              </button>
+            )}
+          </div>
         </>
       )}
     </section>

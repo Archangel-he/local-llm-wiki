@@ -2174,6 +2174,27 @@ body.is-resizing {
   line-height: 1.35;
 }
 
+.job-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 7px;
+  gap: 5px;
+}
+
+.job-actions button {
+  height: 23px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  font-size: 9px;
+}
+
+.job-actions button:disabled {
+  opacity: 0.5;
+}
+
 .job-notice.is-error {
   color: var(--text-error);
 }

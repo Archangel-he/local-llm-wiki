@@ -337,6 +337,32 @@ export class MockMvp1Client implements Mvp1Client {
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }
 
+  async retryJob(jobId: string) {
+    const job = this.jobs.find((item) => item.id === jobId);
+    if (!job || job.status !== "failed" || job.attempt >= job.maxAttempts) {
+      throw new Mvp1ClientError(
+        "JOB_ALREADY_EXISTS",
+        "The job cannot be retried.",
+      );
+    }
+    job.status = "queued";
+    job.error = null;
+    job.progress = { stage: "queued", current: 0, total: 4 };
+    return clone(job);
+  }
+
+  async cancelJob(jobId: string) {
+    const job = this.jobs.find((item) => item.id === jobId);
+    if (!job || !["queued", "running", "retrying"].includes(job.status)) {
+      throw new Mvp1ClientError(
+        "JOB_NOT_CANCELLABLE",
+        "The job cannot be cancelled.",
+      );
+    }
+    job.status = job.status === "queued" ? "cancelled" : "cancel_requested";
+    return clone(job);
+  }
+
   async createModelProfile(input: ModelProfileInput) {
     if (
       input.provider === "openai_compatible" &&

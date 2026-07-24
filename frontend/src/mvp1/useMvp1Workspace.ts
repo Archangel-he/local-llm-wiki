@@ -25,10 +25,13 @@ const initialData: WorkspaceData = {
 };
 
 function buildTreeSections(data: WorkspaceData): TreeSection[] {
-  const contentPages = data.pages.filter((page) => !page.systemView);
+  const contentPages = data.pages.filter(
+    (page) => !page.systemView && !page.tags.includes("raw-source"),
+  );
   const systemPages = data.pages.filter((page) => page.systemView);
   const initialWiki = initialTreeSections.find((section) => section.id === "wiki")!;
   const initialPageIds = new Set(wikiPages.map((page) => page.id));
+  const usingFixtures = contentPages.some((page) => page.id === "page-a");
   return [
     {
       id: "raw",
@@ -51,9 +54,9 @@ function buildTreeSections(data: WorkspaceData): TreeSection[] {
       label: "Wiki",
       icon: "folder",
       children: [
-        ...initialWiki.children,
+        ...(usingFixtures ? initialWiki.children : []),
         ...contentPages
-          .filter((page) => !initialPageIds.has(page.id))
+          .filter((page) => !usingFixtures || !initialPageIds.has(page.id))
           .map((page) => ({
           id: `wiki-${page.id}`,
           label: page.title,
@@ -68,7 +71,14 @@ function buildTreeSections(data: WorkspaceData): TreeSection[] {
         })),
       ],
     },
-    initialTreeSections.find((section) => section.id === "lint")!,
+    usingFixtures
+      ? initialTreeSections.find((section) => section.id === "lint")!
+      : {
+          id: "lint",
+          label: "Lint Issues",
+          icon: "warning",
+          children: [],
+        },
     {
       id: "recent",
       label: "Recent",
@@ -107,14 +117,21 @@ export function useMvp1Workspace() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([client.loadWorkspace(), client.getModelProfiles()]).then(
-      ([workspace, profileData]) => {
+    void Promise.all([client.loadWorkspace(), client.getModelProfiles()])
+      .then(([workspace, profileData]) => {
         if (!active) return;
         setData(workspace);
         setProfiles(profileData.profiles);
         setDefaultProfileId(profileData.defaultProfileId);
-      },
-    );
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setUploadError(
+          error instanceof Error
+            ? error.message
+            : "The Workspace could not be loaded.",
+        );
+      });
     const activeSubscriptions = subscriptions.current;
     return () => {
       active = false;
@@ -122,6 +139,39 @@ export function useMvp1Workspace() {
       activeSubscriptions.clear();
     };
   }, [client]);
+
+  const watchJob = useCallback(
+    (jobId: string, filename: string) => {
+      subscriptions.current.get(jobId)?.();
+      const unsubscribe = client.subscribeJob(jobId, (event) => {
+        setData((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) =>
+            job.id === event.job.id
+              ? { ...event.job, filename: job.filename }
+              : job,
+          ),
+        }));
+        if (
+          event.type === "completed" ||
+          event.type === "failed" ||
+          event.type === "cancelled"
+        ) {
+          subscriptions.current.get(event.job.id)?.();
+          subscriptions.current.delete(event.job.id);
+        }
+        if (event.type === "completed") {
+          setCompletedPageId(event.affectedPageIds?.[0] ?? null);
+          setUploadMessage(`${filename} completed and the Wiki was refreshed.`);
+          void refresh();
+        } else if (event.type === "failed") {
+          setUploadError(event.job.error ?? `${filename} failed.`);
+        }
+      });
+      subscriptions.current.set(jobId, unsubscribe);
+    },
+    [client, refresh],
+  );
 
   const uploadSource = useCallback(
     async (file: File) => {
@@ -138,22 +188,7 @@ export function useMvp1Workspace() {
         }
         if (!result.job) return;
         setUploadMessage(`${file.name} queued as ${result.job.id}.`);
-        const unsubscribe = client.subscribeJob(result.job.id, (event) => {
-          setData((current) => ({
-            ...current,
-            jobs: current.jobs.map((job) =>
-              job.id === event.job.id ? event.job : job,
-            ),
-          }));
-          if (event.type === "completed") {
-            subscriptions.current.get(event.job.id)?.();
-            subscriptions.current.delete(event.job.id);
-            setCompletedPageId(event.affectedPageIds?.[0] ?? null);
-            setUploadMessage(`${file.name} completed and the Wiki was refreshed.`);
-            void refresh();
-          }
-        });
-        subscriptions.current.set(result.job.id, unsubscribe);
+        watchJob(result.job.id, file.name);
       } catch (error) {
         setUploadError(
           error instanceof Mvp1ClientError
@@ -162,6 +197,33 @@ export function useMvp1Workspace() {
         );
       } finally {
         setUploading(false);
+      }
+    },
+    [client, refresh, watchJob],
+  );
+
+  const retryJob = useCallback(
+    async (jobId: string) => {
+      setUploadError(null);
+      try {
+        const job = await client.retryJob(jobId);
+        await refresh();
+        watchJob(jobId, job.filename);
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : "Retry failed.");
+      }
+    },
+    [client, refresh, watchJob],
+  );
+
+  const cancelJob = useCallback(
+    async (jobId: string) => {
+      setUploadError(null);
+      try {
+        await client.cancelJob(jobId);
+        await refresh();
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : "Cancel failed.");
       }
     },
     [client, refresh],
@@ -209,6 +271,8 @@ export function useMvp1Workspace() {
     completedPageId,
     exportPreview,
     uploadSource,
+    retryJob,
+    cancelJob,
     createProfile,
     testProfile,
     setDefaultProfile,

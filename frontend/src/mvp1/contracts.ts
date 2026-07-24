@@ -4,14 +4,19 @@ export type SourceStatus = "active" | "archived";
 export type JobStatus =
   | "queued"
   | "running"
+  | "retrying"
   | "completed"
   | "failed"
   | "cancel_requested"
   | "cancelled";
 export type JobStage =
   | "queued"
+  | "starting"
   | "parsing"
+  | "loading_context"
+  | "calling_model"
   | "generating_wiki"
+  | "validating"
   | "committing"
   | "completed";
 
@@ -39,7 +44,7 @@ export interface IngestJob {
   status: JobStatus;
   modelProfileId: string;
   model: {
-    provider: "ollama" | "openai_compatible";
+    provider: "mock" | "ollama" | "openai_compatible";
     name: string;
   };
   attempt: number;
@@ -80,7 +85,7 @@ export interface JobEvent {
 export interface ModelProfile {
   id: string;
   displayName: string;
-  provider: "ollama" | "openai_compatible";
+  provider: "mock" | "ollama" | "openai_compatible";
   endpointOrigin: string;
   modelName: string;
   hasCredential: boolean;
@@ -95,7 +100,7 @@ export interface ModelProfile {
 
 export interface ModelProfileInput {
   displayName: string;
-  provider: ModelProfile["provider"];
+  provider: "ollama" | "openai_compatible";
   baseUrl: string;
   modelName: string;
   apiKey?: string;
@@ -111,6 +116,8 @@ export interface Mvp1Client {
   loadWorkspace(): Promise<WorkspaceData>;
   uploadSource(file: File): Promise<UploadResult>;
   subscribeJob(jobId: string, onEvent: (event: JobEvent) => void): () => void;
+  retryJob(jobId: string): Promise<IngestJob>;
+  cancelJob(jobId: string): Promise<IngestJob>;
   createModelProfile(input: ModelProfileInput): Promise<ModelProfile>;
   testModelProfile(profileId: string): Promise<ModelProfile>;
   setDefaultModelProfile(profileId: string): Promise<void>;
@@ -123,11 +130,7 @@ export interface Mvp1Client {
 
 export class Mvp1ClientError extends Error {
   constructor(
-    public readonly code:
-      | "UNSUPPORTED_FILE_TYPE"
-      | "FILE_TOO_LARGE"
-      | "VALIDATION_ERROR"
-      | "MODEL_ENDPOINT_BLOCKED",
+    public readonly code: string,
     message: string,
   ) {
     super(message);
