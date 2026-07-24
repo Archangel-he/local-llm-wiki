@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..models import ModelProfile
 
@@ -58,3 +58,32 @@ class ModelProfileRead(BaseModel):
 class ModelProfileList(BaseModel):
     items: list[ModelProfileRead]
     next_cursor: str | None = None
+
+
+class ModelProfileCreate(BaseModel):
+    profile_key: str | None = Field(default=None, min_length=1, max_length=100)
+    display_name: str = Field(min_length=1, max_length=200)
+    provider: str
+    base_url: str = Field(min_length=1, max_length=2000)
+    model_name: str = Field(min_length=1, max_length=300)
+    api_key: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
+class ModelProfileUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    base_url: str | None = Field(default=None, min_length=1, max_length=2000)
+    model_name: str | None = Field(default=None, min_length=1, max_length=300)
+    api_key: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
+class ModelPolicyUpdate(BaseModel):
+    default_model_profile_id: uuid.UUID
+
+
+class ModelProfileTestResult(BaseModel):
+    reachable: bool
+    model_found: bool
+    streaming_supported: bool
+    structured_output_supported: bool
+    latency_ms: int | None = None
+    safe_reason: str | None = None

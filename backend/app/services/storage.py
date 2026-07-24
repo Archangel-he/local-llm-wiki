@@ -28,6 +28,10 @@ class StorageHashMismatch(StorageError):
     pass
 
 
+class StorageLimitExceeded(StorageError):
+    pass
+
+
 @dataclass(frozen=True)
 class StoredObject:
     storage_key: str
@@ -41,6 +45,7 @@ class Storage(Protocol):
         stream: BinaryIO,
         storage_key: str | None = None,
         expected_sha256: str | None = None,
+        max_bytes: int | None = None,
     ) -> StoredObject: ...
 
     def open(self, storage_key: str) -> BinaryIO: ...
@@ -90,6 +95,7 @@ class LocalStorage:
         stream: BinaryIO,
         storage_key: str | None = None,
         expected_sha256: str | None = None,
+        max_bytes: int | None = None,
     ) -> StoredObject:
         digest = hashlib.sha256()
         size_bytes = 0
@@ -109,6 +115,8 @@ class LocalStorage:
                     temp.write(chunk)
                     digest.update(chunk)
                     size_bytes += len(chunk)
+                    if max_bytes is not None and size_bytes > max_bytes:
+                        raise StorageLimitExceeded("Object exceeds the configured size limit")
                 temp.flush()
                 os.fsync(temp.fileno())
 
