@@ -12,6 +12,8 @@ dependencies = [
     "redis>=5,<7",
     "rq>=2,<3",
     "httpx>=0.27,<1",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
 ]
 
 [project.scripts]
@@ -20,7 +22,14 @@ wiki-worker = "app.worker.runner:main"
 [tool.pytest.ini_options]
 addopts = "-ra"
 asyncio_mode = "auto"
-markers = [
-  "integration: requires an explicitly configured Redis test instance",
-]
 testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: requires PostgreSQL, Redis, or another external service",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

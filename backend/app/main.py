@@ -4,7 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.health import router as health_router
+from .api.model_profiles import router as model_profiles_router
+from .api.workspaces import router as workspaces_router
 from .config import settings
+from .core.errors import RequestIdMiddleware, install_error_handlers
 
 app = FastAPI(
     title="local-llm-wiki",
@@ -20,8 +23,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIdMiddleware)
+install_error_handlers(app)
 
 app.include_router(health_router, prefix="/api")
+app.include_router(workspaces_router, prefix="/api")
+app.include_router(model_profiles_router, prefix="/api")
 
 
 @app.get("/api")
@@ -31,6 +38,7 @@ def root():
 
 def run() -> None:
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
 
 

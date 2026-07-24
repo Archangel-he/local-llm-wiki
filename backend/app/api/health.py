@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
@@ -11,13 +11,14 @@ from ..config import settings
 from ..database import get_db
 from ..llm import bootstrap_runtime_profile
 from ..llm.health import probe_default_llm
+from ..services.storage import get_storage
 from ..worker.health import check_worker_health
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def health(db: Session = Depends(get_db)):  # noqa: B008
+async def health(request: Request, db: Session = Depends(get_db)):  # noqa: B008
     components: dict[str, str] = {
         "api": "ok",
         "postgres": "ok",
@@ -50,7 +51,13 @@ async def health(db: Session = Depends(get_db)):  # noqa: B008
         if redis_connection is not None:
             redis_connection.close()
 
-    # Bootstrap settings are temporary; B can replace this with a DB loader.
+    try:
+        if not get_storage().health():
+            components["storage"] = "unavailable"
+    except Exception:
+        components["storage"] = "unavailable"
+
+    # Environment bootstrapping remains the fallback until profile selection is writable.
     profile = bootstrap_runtime_profile(
         provider=settings.llm_provider,
         base_url=settings.llm_base_url,
@@ -70,4 +77,5 @@ async def health(db: Session = Depends(get_db)):  # noqa: B008
     return {
         "status": overall,
         "components": components,
+        "request_id": request.state.request_id,
     }
