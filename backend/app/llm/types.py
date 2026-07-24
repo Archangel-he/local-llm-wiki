@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 
 class ModelProvider(StrEnum):
+    MOCK = "mock"
     OLLAMA = "ollama"
     OPENAI_COMPATIBLE = "openai_compatible"
 
@@ -60,8 +61,12 @@ class RuntimeModelProfile:
         if not resolved_profile_id:
             raise ValueError("profile_id must not be empty")
 
+        resolved_provider = ModelProvider(provider)
         parts = urlsplit(resolved_base_url)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
+        if resolved_provider is ModelProvider.MOCK:
+            if parts.scheme != "mock" or not parts.hostname:
+                raise ValueError("mock profiles require a mock:// URL")
+        elif parts.scheme not in {"http", "https"} or not parts.hostname:
             raise ValueError("base_url must be an absolute HTTP(S) URL")
         if parts.username is not None or parts.password is not None:
             raise ValueError("base_url must not contain user information")
@@ -75,7 +80,7 @@ class RuntimeModelProfile:
             raise ValueError("model_name must not be empty")
 
         self.profile_id = resolved_profile_id
-        self.provider = ModelProvider(provider)
+        self.provider = resolved_provider
         self.base_url = resolved_base_url
         self.model_name = resolved_model_name
         self.__credential = credential

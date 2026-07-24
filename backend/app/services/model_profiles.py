@@ -139,7 +139,11 @@ def runtime_profile(profile: ModelProfile) -> RuntimeModelProfile:
     return RuntimeModelProfile(
         profile_id=str(profile.id),
         provider=profile.provider,
-        base_url=profile.base_url or "",
+        base_url=(
+            profile.base_url or "mock://local"
+            if profile.provider == "mock"
+            else profile.base_url or ""
+        ),
         model_name=profile.model_name or "",
         credential=credential,
     )

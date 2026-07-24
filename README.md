@@ -178,6 +178,7 @@ docker compose up --build
 | [`docs/frontend.md`](docs/frontend.md) | 三栏布局、图谱、面板联动和开发节奏 |
 | [`docs/testing.md`](docs/testing.md) | 固定数据集、自动测试、真实模型和性能门槛 |
 | [`docs/deployment.md`](docs/deployment.md) | localhost、阿里云、HTTPS、备份恢复和运维 |
+| [`docs/MVP-1-C.md`](docs/MVP-1-C.md) | MVP 1-C Provider、Ingest Worker、校验与验收 |
 | [`docs/decisions/`](docs/decisions/) | 关键架构决策与替代方案 |
 
 ## 设计原则
