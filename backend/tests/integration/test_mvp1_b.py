@@ -12,7 +12,7 @@ from app.main import app
 from app.models import Job, PageAlias, Source, WikiLink, WikiPage, WikiRevision, Workspace
 from app.schemas.wiki import WikiOperationBatch
 from app.seed import DEFAULT_USER_ID, DEFAULT_WORKSPACE_ID, seed_database
-from app.services.wiki import AliasConflict, apply_wiki_operations
+from app.services.wiki import AliasConflict, apply_wiki_operations, normalize_alias
 
 pytestmark = pytest.mark.integration
 
@@ -177,7 +177,7 @@ def test_alias_conflict_rolls_back_entire_wiki_batch():
             PageAlias(
                 workspace_id=DEFAULT_WORKSPACE_ID,
                 page_id=existing_page.id,
-                alias_normalized="reserved-alias",
+            alias_normalized=normalize_alias("Reserved Alias"),
                 alias_display="Reserved Alias",
                 created_by_revision_id=existing_revision.id,
             )
