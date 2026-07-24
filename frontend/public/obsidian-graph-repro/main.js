@@ -6,65 +6,10 @@ const worker = new Worker(new URL("./sim-worker.js", import.meta.url), {
   name: "Graph Worker",
 });
 
-const nodeDefinitions = [
-  ["Knowledge", 18],
-  ["Ideas", 12],
-  ["Projects", 13],
-  ["Research", 11],
-  ["Writing", 10],
-  ["Books", 8],
-  ["Notes", 16],
-  ["Questions", 7],
-  ["Design", 9],
-  ["Code", 10],
-  ["People", 6],
-  ["Archive", 5],
-  ["Daily", 8],
-  ["Experiments", 7],
-].map(([id, weight], index) => ({
-  id,
-  weight,
-  x: Math.cos((index / 14) * Math.PI * 2) * 180 + Math.random() * 30,
-  y: Math.sin((index / 14) * Math.PI * 2) * 180 + Math.random() * 30,
-}));
-
-const links = [
-  ["Knowledge", "Ideas"],
-  ["Knowledge", "Research"],
-  ["Knowledge", "Notes"],
-  ["Ideas", "Projects"],
-  ["Ideas", "Writing"],
-  ["Ideas", "Design"],
-  ["Projects", "Code"],
-  ["Projects", "Experiments"],
-  ["Research", "Books"],
-  ["Research", "Questions"],
-  ["Writing", "Books"],
-  ["Writing", "Daily"],
-  ["Notes", "Daily"],
-  ["Notes", "Archive"],
-  ["Notes", "People"],
-  ["Design", "Experiments"],
-  ["Code", "Experiments"],
-  ["Questions", "People"],
-];
-
-const neighbors = new Map(nodeDefinitions.map((node) => [node.id, new Set()]));
-for (const [source, target] of links) {
-  neighbors.get(source).add(target);
-  neighbors.get(target).add(source);
-}
-
-const nodes = new Map(
-  nodeDefinitions.map((node) => [
-    node.id,
-    {
-      ...node,
-      targetX: node.x,
-      targetY: node.y,
-    },
-  ]),
-);
+let nodeDefinitions = [];
+let links = [];
+let neighbors = new Map();
+const nodes = new Map();
 
 const camera = {
   x: 0,
@@ -77,8 +22,10 @@ let rafHandle = null;
 let idleFrames = 0;
 let hoveredNode = null;
 let draggedNode = null;
+let selectedNode = null;
 let panning = false;
 let lastPointer = null;
+let pointerMoved = false;
 let latestAlpha = 1;
 let autoFit = true;
 let renderedFocusNode = null;
@@ -123,7 +70,7 @@ function distancesFrom(startId) {
     const distance = distances.get(current);
     if (distance >= 2) continue;
 
-    for (const neighbor of neighbors.get(current)) {
+    for (const neighbor of neighbors.get(current) ?? []) {
       if (distances.has(neighbor)) continue;
       distances.set(neighbor, distance + 1);
       queue.push(neighbor);
@@ -210,7 +157,7 @@ function render() {
   const now = performance.now();
   const elapsed = Math.min(64, now - previousRenderTime);
   previousRenderTime = now;
-  const requestedFocus = draggedNode || hoveredNode;
+  const requestedFocus = draggedNode || hoveredNode || selectedNode;
   if (requestedFocus && requestedFocus !== renderedFocusNode) {
     renderedFocusNode = requestedFocus;
     focusBlend = 0;
@@ -304,12 +251,15 @@ function render() {
     context.fillStyle = active
       ? rgba([48, 45, 65], opacity)
       : rgba([55, 55, 62], opacity * 0.78);
-    context.fillText(node.id, point.x, point.y + radius + 6);
+    context.fillText(node.label, point.x, point.y + radius + 6);
   }
   canvas.dataset.allNodesVisible = String(allNodesVisible);
   canvas.dataset.focusedNode = renderedFocusNode?.id ?? "";
+  canvas.dataset.hoveredNode = hoveredNode?.id ?? "";
   canvas.dataset.focusStrength = focusBlend.toFixed(2);
   canvas.dataset.nodeSize = document.querySelector("#node-size").value;
+  canvas.dataset.nodeCount = String(nodes.size);
+  canvas.dataset.edgeCount = String(links.length);
 
   statusEl.textContent =
     `alpha ${latestAlpha.toFixed(4)} · ` +
@@ -340,6 +290,66 @@ function sendInitialGraph() {
   });
 }
 
+function setGraphData(message) {
+  nodeDefinitions = message.nodes.map((input, index) => {
+    const angle = (index / Math.max(1, message.nodes.length)) * Math.PI * 2;
+    const x = Number.isFinite(input.x) ? input.x : Math.cos(angle) * 180;
+    const y = Number.isFinite(input.y) ? input.y : Math.sin(angle) * 180;
+    return {
+      id: input.id,
+      label: input.label,
+      pageId: input.pageId,
+      weight: Number.isFinite(input.weight) ? input.weight : 8,
+      initialX: x,
+      initialY: y,
+      x,
+      y,
+    };
+  });
+  links = message.links
+    .map((link) => [link.source, link.target])
+    .filter(
+      ([source, target]) =>
+        nodeDefinitions.some((node) => node.id === source) &&
+        nodeDefinitions.some((node) => node.id === target),
+    );
+
+  neighbors = new Map(
+    nodeDefinitions.map((node) => [node.id, new Set()]),
+  );
+  for (const [source, target] of links) {
+    neighbors.get(source).add(target);
+    neighbors.get(target).add(source);
+  }
+
+  nodes.clear();
+  for (const definition of nodeDefinitions) {
+    nodes.set(definition.id, { ...definition });
+  }
+
+  hoveredNode = null;
+  draggedNode = null;
+  selectedNode = null;
+  renderedFocusNode = null;
+  focusBlend = 0;
+  autoFit = true;
+  camera.x = 0;
+  camera.y = 0;
+  camera.scale = 1;
+  sendInitialGraph();
+  fitCameraToNodes();
+  changed();
+}
+
+addEventListener("message", (event) => {
+  if (event.origin !== location.origin || event.source !== parent) return;
+  if (event.data?.type !== "graph-data") return;
+  if (!Array.isArray(event.data.nodes) || !Array.isArray(event.data.links)) {
+    return;
+  }
+  setGraphData(event.data);
+});
+
 worker.addEventListener("message", (event) => {
   const { ids, buffer, alpha } = event.data;
   const coordinates = new Float32Array(buffer);
@@ -368,6 +378,8 @@ canvas.addEventListener("pointerdown", (event) => {
   const node = findNodeAt(event.clientX, event.clientY);
   canvas.setPointerCapture(event.pointerId);
   lastPointer = { x: event.clientX, y: event.clientY };
+  pointerMoved = false;
+  selectedNode = null;
 
   if (node) {
     draggedNode = node;
@@ -381,6 +393,7 @@ canvas.addEventListener("pointerdown", (event) => {
     });
   } else {
     panning = true;
+    hoveredNode = null;
   }
 
   changed();
@@ -388,6 +401,15 @@ canvas.addEventListener("pointerdown", (event) => {
 
 canvas.addEventListener("pointermove", (event) => {
   if (draggedNode) {
+    if (
+      lastPointer &&
+      Math.hypot(
+        event.clientX - lastPointer.x,
+        event.clientY - lastPointer.y,
+      ) > 4
+    ) {
+      pointerMoved = true;
+    }
     const position = screenToGraph(event.clientX, event.clientY);
     draggedNode.x = position.x;
     draggedNode.y = position.y;
@@ -417,16 +439,29 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 function releasePointer(event) {
-  if (draggedNode) {
+  const releasedNode = draggedNode;
+  if (releasedNode) {
     worker.postMessage({
       alphaTarget: 0,
-      forceNode: { id: draggedNode.id, x: null, y: null },
+      forceNode: { id: releasedNode.id, x: null, y: null },
     });
+    if (event.type === "pointerup" && !pointerMoved) {
+      selectedNode = releasedNode;
+      parent.postMessage(
+        {
+          type: "graph-node-select",
+          nodeId: releasedNode.id,
+          pageId: releasedNode.pageId,
+        },
+        location.origin,
+      );
+    }
   }
 
   draggedNode = null;
   panning = false;
   lastPointer = null;
+  pointerMoved = false;
   canvas.classList.remove("dragging");
   if (canvas.hasPointerCapture(event.pointerId)) {
     canvas.releasePointerCapture(event.pointerId);
@@ -491,12 +526,9 @@ document.querySelector("#reset").addEventListener("click", () => {
   camera.scale = 1;
 
   nodeDefinitions.forEach((definition, index) => {
-    const angle = (index / nodeDefinitions.length) * Math.PI * 2;
-    definition.x = Math.cos(angle) * 180;
-    definition.y = Math.sin(angle) * 180;
     const node = nodes.get(definition.id);
-    node.x = definition.x;
-    node.y = definition.y;
+    node.x = definition.initialX;
+    node.y = definition.initialY;
   });
 
   sendInitialGraph();
@@ -505,4 +537,3 @@ document.querySelector("#reset").addEventListener("click", () => {
 
 addEventListener("resize", resize);
 resize();
-sendInitialGraph();

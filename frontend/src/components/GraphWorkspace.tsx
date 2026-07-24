@@ -228,6 +228,28 @@ export function GraphWorkspace({
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }, []);
 
+  const syncReproGraph = useCallback(() => {
+    reproFrameRef.current?.contentWindow?.postMessage(
+      {
+        type: "graph-data",
+        nodes: graphNodes.map((node) => ({
+          id: node.id,
+          label: node.label,
+          pageId: node.pageId,
+          weight: node.size,
+          x: node.x * 180,
+          y: node.y * 180,
+        })),
+        links: graphEdges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+        })),
+      },
+      window.location.origin,
+    );
+  }, []);
+
   const triggerReproAction = useCallback((id: "reheat" | "reset") => {
     const button = reproFrameRef.current?.contentDocument?.getElementById(
       id,
@@ -238,6 +260,27 @@ export function GraphWorkspace({
   const replayLayout = useCallback(() => {
     triggerReproAction("reheat");
   }, [triggerReproAction]);
+
+  useEffect(() => {
+    const handleGraphMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== reproFrameRef.current?.contentWindow ||
+        event.data?.type !== "graph-node-select"
+      ) {
+        return;
+      }
+      const node = graphNodes.find(
+        (candidate) =>
+          candidate.id === event.data.nodeId &&
+          candidate.pageId === event.data.pageId,
+      );
+      if (node) onSelectPage(node.pageId);
+    };
+
+    window.addEventListener("message", handleGraphMessage);
+    return () => window.removeEventListener("message", handleGraphMessage);
+  }, [onSelectPage]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -719,6 +762,7 @@ export function GraphWorkspace({
           src="/obsidian-graph-repro/index.html"
           title="Obsidian graph animation reproduction"
           onLoad={() => {
+            syncReproGraph();
             updateReproForce("node-size", nodeScale);
             updateReproForce("center", centerForce);
             updateReproForce("repel", repelForce);

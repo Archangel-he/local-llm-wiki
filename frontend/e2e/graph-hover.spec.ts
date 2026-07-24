@@ -31,6 +31,8 @@ test("moves the reproduction controls into Graph controls", async ({
   const frame = page.frameLocator('[data-testid="graph-repro-frame"]');
   const canvas = frame.locator("#graph");
   await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-node-count", "4");
+  await expect(canvas).toHaveAttribute("data-edge-count", "2");
   await expect(canvas).toHaveAttribute("data-all-nodes-visible", "true");
   await expect(canvas).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(frame.locator(".panel")).toHaveCount(0);
@@ -69,10 +71,20 @@ test("drags a node with the copied reproduction runtime", async ({
 
   const hit = await grabRenderedNode(page, canvas);
   await expect(canvas).toHaveAttribute("data-focused-node", /\S+/);
+  const selectedNodeId = await canvas.getAttribute("data-focused-node");
   await page.mouse.up();
   await expect(canvas).not.toHaveClass(/dragging/);
   await expect(canvas).toHaveAttribute("data-focused-node", /\S+/);
   await expect(canvas).toHaveAttribute("data-focus-strength", "1.00");
+  const wikiTitlesByNode: Record<string, string> = {
+    "node-a": "Project Aurora",
+    "node-b": "Lin",
+    "node-c": "Knowledge Graph",
+    "node-d": "Orphan Note",
+  };
+  await expect(page.getByTestId("wiki-title")).toHaveText(
+    wikiTitlesByNode[selectedNodeId ?? ""],
+  );
   await page.screenshot({
     path: testInfo.outputPath("copied-repro-hover.png"),
     animations: "disabled",
