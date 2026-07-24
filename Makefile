@@ -1,6 +1,6 @@
 .PHONY: help up down build migrate seed init lint test-unit \
 	test-integration frontend-install frontend-lint frontend-test frontend-build test-e2e \
-	verify-services verify-mvp0 logs clean
+	verify-services verify-mvp0 verify-mvp1 logs clean
 
 PNPM := corepack pnpm
 
@@ -86,12 +86,22 @@ logs: ## Show logs
 clean: ## Remove everything (volumes too)
 	docker compose down -v
 
-verify-mvp1: ## Run MVP 1 gate checks
+verify-mvp1: ## Run the complete MVP 1 gate
 	@echo "=== MVP 1 Gate ==="
-	@echo "1. Running contract tests..."
-	docker compose exec api python -m pytest tests/contract/ -v --tb=short || true
-	@echo "2. Running integration pipeline test..."
-	docker compose exec api python -m pytest tests/integration/ -v --tb=short || true
-	@echo "3. Checking fixture files..."
-	@docker compose exec api ls tests/fixtures/ | grep -q "aurora-a.md" || (echo "WARN: fixture aurora-a.md missing"; exit 1)
-	@echo "=== MVP 1 Gate complete ==="
+	@echo "1. Checking services and fixtures..."
+	@docker compose ps --status running | grep -q "api" || (echo "FAIL: api not running"; exit 1)
+	@docker compose ps --status running | grep -q "worker" || (echo "FAIL: worker not running"; exit 1)
+	@test -f tests/fixtures/aurora-a.md || (echo "FAIL: fixture aurora-a.md missing"; exit 1)
+	@echo "2. Running backend lint and all tests..."
+	docker compose exec api pip install -r dev-requirements.txt -q
+	docker compose exec api ruff check .
+	docker compose exec -e REDIS_TEST_URL=redis://redis:6379/15 api python -m pytest tests -v --tb=short
+	@echo "3. Running frontend lint, unit tests and build..."
+	cd frontend && $(PNPM) lint
+	cd frontend && $(PNPM) test
+	cd frontend && $(PNPM) build
+	@echo "4. Running deterministic Edge E2E..."
+	cd frontend && $(PNPM) test:e2e
+	@echo "5. Running real Compose Edge E2E..."
+	cd frontend && MVP1_REAL_API=true PLAYWRIGHT_BASE_URL=http://localhost:8000 $(PNPM) test:e2e -- real-mvp1.spec.ts
+	@echo "=== MVP 1 Gate PASSED ==="

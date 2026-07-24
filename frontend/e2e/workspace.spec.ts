@@ -212,6 +212,15 @@ test.describe("Obsidian-style workspace", () => {
       "Obsidian Vault export preview",
     );
     await expect(page.getByTestId("export-preview")).toContainText("aliases:");
+    await page.getByRole("button", { name: "Create Vault ZIP" }).click();
+    await expect(page.getByTestId("export-status")).toContainText("completed");
+    await expect(page.getByTestId("export-download")).toBeVisible();
+    await page.getByRole("button", { name: "Close export preview" }).click();
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Preview Obsidian export" })
+      .click();
+    await expect(page.getByTestId("export-download")).toBeVisible();
   });
 
   test("creates, tests and activates a custom model profile", async ({

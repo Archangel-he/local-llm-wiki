@@ -306,6 +306,10 @@ function App() {
       />
       <ExportPreviewDialog
         preview={workspace.exportPreview}
+        job={workspace.exportJob}
+        error={workspace.exportError}
+        downloadUrl={workspace.exportDownloadUrl}
+        onStartExport={workspace.startExport}
         onClose={workspace.closeExportPreview}
       />
     </main>

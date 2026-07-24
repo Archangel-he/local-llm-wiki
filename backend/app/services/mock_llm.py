@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
 
+from typing import Any
+
 # Mock LLM adapter for testing
 # Returns fixed responses instead of calling Ollama
-
-from typing import Any
 
 MOCK_INGEST: dict[str, Any] = {
     "schema_version": 1,

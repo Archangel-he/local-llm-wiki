@@ -1,6 +1,7 @@
 import type { GraphEdge, GraphNode, WikiPage } from "../types";
 import type {
   ActivityEntry,
+  ExportJob,
   ExportPreview,
   IngestJob,
   JobEvent,
@@ -109,6 +110,16 @@ interface ApiProfile {
   last_tested_at: string | null;
 }
 
+interface ApiExport {
+  id: string;
+  status: ExportJob["status"];
+  progress: { stage?: string };
+  error: { code: string; message: string } | null;
+  filename: string | null;
+  sha256: string | null;
+  size_bytes: number | null;
+}
+
 const pageTypeMap: Record<string, WikiPage["type"]> = {
   topic: "concept",
   analysis: "concept",
@@ -172,6 +183,18 @@ function profileFromApi(
       streaming: Boolean(profile.capabilities.streaming),
       structuredOutput: Boolean(profile.capabilities.structured_output),
     },
+  };
+}
+
+function exportFromApi(item: ApiExport): ExportJob {
+  return {
+    id: item.id,
+    status: item.status,
+    stage: item.progress.stage ?? "queued",
+    filename: item.filename,
+    sha256: item.sha256,
+    sizeBytes: item.size_bytes,
+    error: item.error?.message ?? null,
   };
 }
 
@@ -374,9 +397,11 @@ export class HttpMvp1Client implements Mvp1Client {
     const filenameBySource = new Map(sources.map((source) => [source.id, source.filename]));
     const data: WorkspaceData = {
       sources,
-      jobs: jobsResponse.items.map((job) =>
-        jobFromApi(job, filenameBySource.get(job.source_id ?? "") ?? "Source ingest"),
-      ),
+      jobs: jobsResponse.items
+        .filter((job) => job.type === "ingest")
+        .map((job) =>
+          jobFromApi(job, filenameBySource.get(job.source_id ?? "") ?? "Source ingest"),
+        ),
       pages: [...rawPages, ...contentPages, indexPage, activityPage],
       graphNodes,
       graphEdges,
@@ -538,5 +563,48 @@ export class HttpMvp1Client implements Mvp1Client {
   async getExportPreview() {
     const data = this.lastWorkspace ?? (await this.loadWorkspace());
     return exportPreview(data);
+  }
+
+  async createExport() {
+    return exportFromApi(
+      await this.request<ApiExport>("/exports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ include_raw: true }),
+      }),
+    );
+  }
+
+  async getExport(exportId: string) {
+    return exportFromApi(
+      await this.request<ApiExport>(`/exports/${exportId}`),
+    );
+  }
+
+  subscribeExport(exportId: string, onUpdate: (job: ExportJob) => void) {
+    let stopped = false;
+    let timer: number | null = null;
+    const terminal = new Set(["completed", "failed", "cancelled"]);
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const job = await this.getExport(exportId);
+        onUpdate(job);
+        if (!terminal.has(job.status)) {
+          timer = window.setTimeout(poll, 750);
+        }
+      } catch {
+        timer = window.setTimeout(poll, 1250);
+      }
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }
+
+  getExportDownloadUrl(exportId: string) {
+    return `${this.root}/exports/${exportId}/download`;
   }
 }

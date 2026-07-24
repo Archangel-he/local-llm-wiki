@@ -9,6 +9,7 @@ import type { TreeSection } from "../types";
 import { getMvp1Client } from "./client";
 import type {
   ExportPreview,
+  ExportJob,
   ModelProfile,
   ModelProfileInput,
   WorkspaceData,
@@ -104,6 +105,9 @@ export function useMvp1Workspace() {
   const [uploading, setUploading] = useState(false);
   const [completedPageId, setCompletedPageId] = useState<string | null>(null);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
+  const [exportJob, setExportJob] = useState<ExportJob | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportSubscription = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(async () => {
     setData(await client.loadWorkspace());
@@ -137,6 +141,7 @@ export function useMvp1Workspace() {
       active = false;
       activeSubscriptions.forEach((unsubscribe) => unsubscribe());
       activeSubscriptions.clear();
+      exportSubscription.current?.();
     };
   }, [client]);
 
@@ -258,6 +263,44 @@ export function useMvp1Workspace() {
   const loadExportPreview = useCallback(async () => {
     const preview = await client.getExportPreview();
     setExportPreview(preview);
+    setExportError(null);
+    const savedId = window.localStorage.getItem("mvp1-export-id");
+    if (!savedId) return;
+    try {
+      const job = await client.createExport();
+      setExportJob(job);
+      window.localStorage.setItem("mvp1-export-id", job.id);
+      if (!["completed", "failed", "cancelled"].includes(job.status)) {
+        exportSubscription.current?.();
+        exportSubscription.current = client.subscribeExport(savedId, setExportJob);
+      }
+    } catch {
+      window.localStorage.removeItem("mvp1-export-id");
+      setExportJob(null);
+    }
+  }, [client]);
+
+  const startExport = useCallback(async () => {
+    setExportError(null);
+    exportSubscription.current?.();
+    try {
+      const job = await client.createExport();
+      setExportJob(job);
+      window.localStorage.setItem("mvp1-export-id", job.id);
+      if (!["completed", "failed", "cancelled"].includes(job.status)) {
+        exportSubscription.current = client.subscribeExport(job.id, (updated) => {
+          setExportJob(updated);
+          if (["completed", "failed", "cancelled"].includes(updated.status)) {
+            exportSubscription.current?.();
+            exportSubscription.current = null;
+          }
+        });
+      }
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "The Vault export could not be created.",
+      );
+    }
   }, [client]);
 
   return {
@@ -270,6 +313,12 @@ export function useMvp1Workspace() {
     uploading,
     completedPageId,
     exportPreview,
+    exportJob,
+    exportError,
+    exportDownloadUrl:
+      exportJob?.status === "completed"
+        ? client.getExportDownloadUrl(exportJob.id)
+        : null,
     uploadSource,
     retryJob,
     cancelJob,
@@ -277,6 +326,7 @@ export function useMvp1Workspace() {
     testProfile,
     setDefaultProfile,
     loadExportPreview,
+    startExport,
     closeExportPreview: () => setExportPreview(null),
   };
 }

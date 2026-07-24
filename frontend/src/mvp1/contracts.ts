@@ -112,6 +112,16 @@ export interface ExportPreview {
   files: Array<{ path: string; preview: string }>;
 }
 
+export interface ExportJob {
+  id: string;
+  status: JobStatus;
+  stage: string;
+  filename: string | null;
+  sha256: string | null;
+  sizeBytes: number | null;
+  error: string | null;
+}
+
 export interface Mvp1Client {
   loadWorkspace(): Promise<WorkspaceData>;
   uploadSource(file: File): Promise<UploadResult>;
@@ -126,6 +136,13 @@ export interface Mvp1Client {
     defaultProfileId: string;
   }>;
   getExportPreview(): Promise<ExportPreview>;
+  createExport(): Promise<ExportJob>;
+  getExport(exportId: string): Promise<ExportJob>;
+  subscribeExport(
+    exportId: string,
+    onUpdate: (job: ExportJob) => void,
+  ): () => void;
+  getExportDownloadUrl(exportId: string): string;
 }
 
 export class Mvp1ClientError extends Error {

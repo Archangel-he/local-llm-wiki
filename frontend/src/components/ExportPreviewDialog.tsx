@@ -1,11 +1,19 @@
-import { Archive, FileText, Folder, X } from "lucide-react";
-import type { ExportPreview } from "../mvp1/contracts";
+import { Archive, Download, FileText, Folder, LoaderCircle, X } from "lucide-react";
+import type { ExportJob, ExportPreview } from "../mvp1/contracts";
 
 export function ExportPreviewDialog({
   preview,
+  job,
+  error,
+  downloadUrl,
+  onStartExport,
   onClose,
 }: {
   preview: ExportPreview | null;
+  job: ExportJob | null;
+  error: string | null;
+  downloadUrl: string | null;
+  onStartExport: () => void;
   onClose: () => void;
 }) {
   if (!preview) return null;
@@ -53,6 +61,41 @@ export function ExportPreviewDialog({
             ))}
           </div>
         </div>
+        <footer className="export-actions">
+          <span data-testid="export-status">
+            {error ??
+              (job
+                ? `${job.status} · ${job.stage}${job.sizeBytes ? ` · ${Math.ceil(job.sizeBytes / 1024)} KiB` : ""}`
+                : "Ready to create a recoverable Vault snapshot.")}
+          </span>
+          {downloadUrl && job?.status === "completed" ? (
+            <a
+              className="export-primary-action"
+              href={downloadUrl}
+              download={job.filename ?? "local-llm-wiki.zip"}
+              data-testid="export-download"
+            >
+              <Download />
+              Download Vault ZIP
+            </a>
+          ) : (
+            <button
+              className="export-primary-action"
+              type="button"
+              onClick={onStartExport}
+              disabled={job?.status === "queued" || job?.status === "running" || job?.status === "retrying"}
+            >
+              {job?.status === "queued" || job?.status === "running" || job?.status === "retrying" ? (
+                <LoaderCircle className="is-spinning" />
+              ) : (
+                <Archive />
+              )}
+              {job?.status === "failed" || job?.status === "cancelled"
+                ? "Create again"
+                : "Create Vault ZIP"}
+            </button>
+          )}
+        </footer>
       </section>
     </div>
   );

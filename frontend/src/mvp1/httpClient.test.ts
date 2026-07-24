@@ -141,4 +141,49 @@ describe("HttpMvp1Client", () => {
       message: "The profile is unavailable.",
     });
   });
+
+  it("creates and restores a downloadable Vault export", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/exports")) {
+        return json({
+          id: "export-1",
+          status: "queued",
+          progress: { stage: "queued" },
+          error: null,
+          filename: null,
+          sha256: null,
+          size_bytes: null,
+        });
+      }
+      if (url.endsWith("/exports/export-1")) {
+        return json({
+          id: "export-1",
+          status: "completed",
+          progress: { stage: "completed" },
+          error: null,
+          filename: "vault.zip",
+          sha256: "export-sha",
+          size_bytes: 1024,
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new HttpMvp1Client("", "workspace-1");
+    await expect(client.createExport()).resolves.toMatchObject({
+      id: "export-1",
+      status: "queued",
+    });
+    await expect(client.getExport("export-1")).resolves.toMatchObject({
+      status: "completed",
+      filename: "vault.zip",
+      sha256: "export-sha",
+      sizeBytes: 1024,
+    });
+    expect(client.getExportDownloadUrl("export-1")).toBe(
+      "/api/workspaces/workspace-1/exports/export-1/download",
+    );
+  });
 });

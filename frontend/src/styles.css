@@ -2346,7 +2346,7 @@ body.is-resizing {
 .export-preview-body {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
-  max-height: 600px;
+  max-height: 540px;
   overflow: hidden;
 }
 
@@ -2389,6 +2389,50 @@ body.is-resizing {
   border-radius: var(--radius-s);
   font-size: 10px;
   line-height: 1.45;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.export-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 6px 11px;
+  color: white;
+  background: var(--interactive-accent);
+  border: 0;
+  border-radius: var(--radius-s);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.export-primary-action:disabled {
+  opacity: 0.65;
+}
+
+.export-primary-action svg {
+  width: 13px;
+  height: 13px;
+}
+
+.is-spinning {
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Maximized panes */

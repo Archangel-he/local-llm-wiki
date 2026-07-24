@@ -1,4 +1,5 @@
 from .content import JobList, JobRead, SourceRead, SourceUploadResponse
+from .exports import ExportCreate, ExportRead
 from .model_profile import (
     ModelPolicyUpdate,
     ModelProfileCreate,
@@ -20,6 +21,8 @@ from .workspace import WorkspaceList, WorkspaceRead
 __all__ = [
     "JobList",
     "JobRead",
+    "ExportCreate",
+    "ExportRead",
     "ModelProfileList",
     "ModelProfileRead",
     "ModelProfileCreate",

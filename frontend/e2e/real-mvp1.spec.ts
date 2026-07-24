@@ -33,4 +33,27 @@ test("uses the real MVP1 API from upload through Wiki refresh", async ({
   await expect(page.getByTestId("wiki-panel")).toContainText(
     "Postponed to: 2025-04-15",
   );
+
+  await page
+    .getByRole("button", { name: "Preview Obsidian export" })
+    .click();
+  await page.getByRole("button", { name: "Create Vault ZIP" }).click();
+  await expect(page.getByTestId("export-status")).toContainText("completed", {
+    timeout: 15_000,
+  });
+  const download = page.getByTestId("export-download");
+  await expect(download).toBeVisible();
+  const downloadUrl = await download.getAttribute("href");
+  expect(downloadUrl).toBeTruthy();
+  const response = await page.request.get(downloadUrl!);
+  expect(response.ok()).toBeTruthy();
+  expect(response.headers()["content-type"]).toContain("application/zip");
+  expect((await response.body()).subarray(0, 2).toString()).toBe("PK");
+
+  await page.getByRole("button", { name: "Close export preview" }).click();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Preview Obsidian export" })
+    .click();
+  await expect(page.getByTestId("export-download")).toBeVisible();
 });

@@ -7,6 +7,7 @@ import {
 import type { GraphEdge, GraphNode, WikiPage } from "../types";
 import type {
   ActivityEntry,
+  ExportJob,
   ExportPreview,
   IngestJob,
   JobEvent,
@@ -87,6 +88,7 @@ function systemPages(pages: WikiPage[], activity: ActivityEntry[]): WikiPage[] {
 }
 
 export class MockMvp1Client implements Mvp1Client {
+  private exportJob: ExportJob | null = null;
   private sources: SourceRecord[] = [
     {
       id: "source-aurora-a",
@@ -470,5 +472,39 @@ export class MockMvp1Client implements Mvp1Client {
         })),
       ],
     };
+  }
+
+  async createExport(): Promise<ExportJob> {
+    this.exportJob = {
+      id: "export-demo-vault",
+      status: "completed",
+      stage: "completed",
+      filename: "local-llm-wiki-demo.zip",
+      sha256: "mock-export-sha256",
+      sizeBytes: 4096,
+      error: null,
+    };
+    return clone(this.exportJob);
+  }
+
+  async getExport(exportId: string): Promise<ExportJob> {
+    if (!this.exportJob || this.exportJob.id !== exportId) {
+      throw new Mvp1ClientError("NOT_FOUND", "Export not found.");
+    }
+    return clone(this.exportJob);
+  }
+
+  subscribeExport(exportId: string, onUpdate: (job: ExportJob) => void) {
+    let active = true;
+    void this.getExport(exportId).then((job) => {
+      if (active) onUpdate(job);
+    });
+    return () => {
+      active = false;
+    };
+  }
+
+  getExportDownloadUrl() {
+    return "data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==";
   }
 }
