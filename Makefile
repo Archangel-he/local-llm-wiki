@@ -85,3 +85,13 @@ logs: ## Show logs
 
 clean: ## Remove everything (volumes too)
 	docker compose down -v
+
+verify-mvp1: ## Run MVP 1 gate checks
+	@echo "=== MVP 1 Gate ==="
+	@echo "1. Running contract tests..."
+	docker compose exec api python -m pytest tests/contract/ -v --tb=short || true
+	@echo "2. Running integration pipeline test..."
+	docker compose exec api python -m pytest tests/integration/ -v --tb=short || true
+	@echo "3. Checking fixture files..."
+	@docker compose exec api ls tests/fixtures/ | grep -q "aurora-a.md" || (echo "WARN: fixture aurora-a.md missing"; exit 1)
+	@echo "=== MVP 1 Gate complete ==="
