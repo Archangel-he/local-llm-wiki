@@ -32,6 +32,7 @@ services:
       DATABASE_URL: postgresql+psycopg://wiki:wiki@postgres:5432/wiki
       REDIS_URL: redis://redis:6379/0
       LLM_BASE_URL: http://host.docker.internal:11434
+      AUTO_MIGRATE: "true"
     env_file:
       - .env
     volumes:

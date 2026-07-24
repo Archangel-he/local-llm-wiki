@@ -21,11 +21,11 @@ seed: ## Seed default user and workspace
 
 init: migrate seed ## Run migrations + seed
 
-test-unit: ## Run unit tests (requires compose running)
+test-unit: ## Run backend unit tests (requires compose running)
 	docker compose exec api pip install -r dev-requirements.txt -q
 	docker compose exec api python -m pytest tests/ -m "not integration" -v
 
-test-integration: ## Run Redis integration tests against disposable DB 15
+test-integration: ## Run PostgreSQL and Redis integration tests
 	docker compose exec api pip install -r dev-requirements.txt -q
 	docker compose exec -e REDIS_TEST_URL=redis://redis:6379/15 api python -m pytest tests/ -m integration -v
 
@@ -50,7 +50,11 @@ verify-mvp0: ## Run MVP 0 gate checks
 	@echo "4. Checking database is migrated..."
 	@docker compose exec api alembic upgrade head 2>&1 | grep -q "skipping" || true
 	@echo "5. Checking seed data exists..."
-	@docker compose exec api python -c "from sqlalchemy import text; from app.database import SessionLocal; db=SessionLocal(); print('seeded' if db.execute(text('SELECT 1 FROM users LIMIT 1')).fetchone() else 'missing')" | grep -q "seeded" && echo "PASS: default user exists" || (docker compose exec api python -m app.seed && echo "PASS: seeded")
+	@docker compose exec api python -m app.seed
+	@docker compose exec api python -c "from app.database import SessionLocal; from app.seed import DEFAULT_USER_ID,DEFAULT_WORKSPACE_ID,DEFAULT_MOCK_PROFILE_ID; from app.models import User,Workspace,ModelProfile; db=SessionLocal(); assert db.get(User,DEFAULT_USER_ID); assert db.get(Workspace,DEFAULT_WORKSPACE_ID); p=db.get(ModelProfile,DEFAULT_MOCK_PROFILE_ID); assert p and p.credential_ciphertext is None; print('PASS: default data is present and credential-free')"
+	@echo "6. Running backend unit and integration tests..."
+	@docker compose exec api pip install -r dev-requirements.txt -q
+	@docker compose exec api python -m pytest tests -v
 	@echo "=== MVP 0 Gate PASSED ==="
 
 logs: ## Show logs

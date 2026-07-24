@@ -33,7 +33,7 @@
 - Redis + RQ Worker；
 - Local Storage adapter；
 - Provider-neutral LLM adapter、Ollama/OpenAI-compatible 骨架和 degraded health；
-- Model Profile 表、默认 Ollama Profile 和凭据加密接口；
+- Model Profile 表、确定性的默认 Mock Profile、可选 Ollama/OpenAI-compatible Profile 和凭据加密接口；
 - Caddy + Vite + TypeScript；
 - 三栏/上下分割 Mock 前端；
 - 默认用户和默认 Workspace；
@@ -58,7 +58,7 @@ clone
 → docker compose up --build
 → 自动迁移和初始化
 → 打开三栏 Mock 工作区
-→ 查看默认 Ollama Profile 和模型设置 Mock
+→ 查看默认 Mock Profile、可选模型 Profile 和模型设置 Mock
 → 查看所有组件 Health
 → 重启
 → 数据仍存在

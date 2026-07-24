@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from app.api import health as health_module
@@ -56,7 +57,9 @@ async def test_health_uses_real_worker_status_and_degrades_for_llm(
     monkeypatch.setattr(health_module, "probe_default_llm", unavailable_llm)
     database = Mock()
 
-    result = await health_module.health(database)
+    request = Mock()
+    request.state = SimpleNamespace(request_id="req_test")
+    result = await health_module.health(request, database)
 
     assert result["status"] == "degraded"
     assert result["components"]["redis"] == "ok"
