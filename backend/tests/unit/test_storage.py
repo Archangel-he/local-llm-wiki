@@ -9,6 +9,7 @@ from app.services.storage import (
     LocalStorage,
     StorageConflict,
     StorageHashMismatch,
+    StorageLimitExceeded,
 )
 
 
@@ -56,3 +57,12 @@ def test_archive_does_not_delete_raw_bytes(tmp_path):
     storage.archive(stored.storage_key)
 
     assert storage.exists(stored.storage_key)
+
+
+def test_storage_enforces_max_bytes_before_publish(tmp_path):
+    storage = LocalStorage(tmp_path)
+
+    with pytest.raises(StorageLimitExceeded):
+        storage.put_immutable(io.BytesIO(b"12345"), max_bytes=4)
+
+    assert not any(path.is_file() for path in tmp_path.rglob("*") if ".tmp" not in path.parts)

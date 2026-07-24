@@ -10,6 +10,8 @@ class LLMErrorCategory(StrEnum):
     TIMEOUT = "timeout"
     AUTHENTICATION = "authentication"
     MODEL_NOT_FOUND = "model_not_found"
+    RATE_LIMITED = "rate_limited"
+    ENDPOINT_BLOCKED = "endpoint_blocked"
     INVALID_RESPONSE = "invalid_response"
     NOT_ENABLED = "not_enabled"
 

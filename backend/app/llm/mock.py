@@ -124,7 +124,7 @@ class MockLLMAdapter:
             raise LLMAdapterError(
                 LLMErrorCategory.INVALID_RESPONSE,
                 "The mock model returned invalid structured output.",
-                retryable=False,
+                retryable=True,
             )
         return StructuredResponse(
             data=deepcopy(self._structured_data),

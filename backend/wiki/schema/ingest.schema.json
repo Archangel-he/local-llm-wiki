@@ -1,0 +1,239 @@
+{
+  "$defs": {
+    "CitationInput": {
+      "properties": {
+        "source_id": {
+          "format": "uuid",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "locator": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator"
+      ],
+      "title": "CitationInput",
+      "type": "object"
+    },
+    "WikiLinkInput": {
+      "properties": {
+        "target_slug": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Slug",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "wikilink",
+            "citation",
+            "derived_from",
+            "related",
+            "contradicts"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "evidence_source_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Source Id"
+        },
+        "weight": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "target_slug",
+        "type"
+      ],
+      "title": "WikiLinkInput",
+      "type": "object"
+    },
+    "WikiPageOperation": {
+      "properties": {
+        "action": {
+          "enum": [
+            "create_page",
+            "update_page",
+            "mark_page_for_review",
+            "create_open_question"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "page_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Id"
+        },
+        "expected_revision_no": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Revision No"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "slug": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Slug",
+          "type": "string"
+        },
+        "page_type": {
+          "enum": [
+            "topic",
+            "entity",
+            "source",
+            "analysis",
+            "question"
+          ],
+          "title": "Page Type",
+          "type": "string"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Aliases",
+          "type": "array"
+        },
+        "markdown": {
+          "minLength": 1,
+          "title": "Markdown",
+          "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "change_summary": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Change Summary"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/WikiLinkInput"
+          },
+          "maxItems": 500,
+          "title": "Links",
+          "type": "array"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/CitationInput"
+          },
+          "maxItems": 500,
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "action",
+        "title",
+        "slug",
+        "page_type",
+        "markdown"
+      ],
+      "title": "WikiPageOperation",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "exclusiveMinimum": 0,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/$defs/WikiPageOperation"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Operations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_id",
+    "operations"
+  ],
+  "title": "WikiOperationBatch",
+  "type": "object"
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -15,6 +16,17 @@ class Settings(BaseSettings):
     llm_model: str = ""
     max_upload_mb: int = 10
     job_max_attempts: int = 3
+    parser_version: str = "mvp1-text-v1"
+    rq_queue_name: str = "default"
+    ingest_job_timeout_seconds: int = 900
+    llm_connect_timeout_seconds: float = 5.0
+    llm_request_timeout_seconds: float = 120.0
+    model_endpoint_allowlist: str = "host.docker.internal,localhost,127.0.0.1,::1"
+    ingest_max_source_chars: int = 120_000
+    ingest_max_existing_pages: int = 200
+    ingest_prompt_version: str = "mvp1-ingest-v1"
+    model_credential_key: SecretStr | None = None
+    model_credential_key_version: int = 1
     session_secret: str = "change-me-in-production"
     default_user_email: str = "default-user@local.invalid"
     default_user_display_name: str = "Default User"
@@ -31,6 +43,14 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def model_endpoint_allowlist_values(self) -> frozenset[str]:
+        return frozenset(
+            item.strip().casefold()
+            for item in self.model_endpoint_allowlist.split(",")
+            if item.strip()
+        )
 
     model_config = {
         "env_file": ".env",

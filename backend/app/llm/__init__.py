@@ -1,4 +1,4 @@
-"""Provider-neutral LLM contracts and MVP0 adapters."""
+"""Provider-neutral LLM contracts and MVP 1 adapters."""
 
 from app.llm.base import LLMAdapter
 from app.llm.bootstrap import bootstrap_runtime_profile
