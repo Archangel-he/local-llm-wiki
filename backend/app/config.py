@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -15,6 +16,11 @@ class Settings(BaseSettings):
     llm_model: str = ""
     max_upload_mb: int = 10
     job_max_attempts: int = 3
+    parser_version: str = "mvp1-text-v1"
+    rq_queue_name: str = "default"
+    ingest_job_timeout_seconds: int = 900
+    model_credential_key: SecretStr | None = None
+    model_credential_key_version: int = 1
     session_secret: str = "change-me-in-production"
     default_user_email: str = "default-user@local.invalid"
     default_user_display_name: str = "Default User"

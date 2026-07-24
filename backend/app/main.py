@@ -4,7 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.health import router as health_router
+from .api.jobs import router as jobs_router
 from .api.model_profiles import router as model_profiles_router
+from .api.sources import router as sources_router
+from .api.wiki import router as wiki_router
 from .api.workspaces import router as workspaces_router
 from .config import settings
 from .core.errors import RequestIdMiddleware, install_error_handlers
@@ -29,6 +32,9 @@ install_error_handlers(app)
 app.include_router(health_router, prefix="/api")
 app.include_router(workspaces_router, prefix="/api")
 app.include_router(model_profiles_router, prefix="/api")
+app.include_router(sources_router, prefix="/api")
+app.include_router(jobs_router, prefix="/api")
+app.include_router(wiki_router, prefix="/api")
 
 
 @app.get("/api")
