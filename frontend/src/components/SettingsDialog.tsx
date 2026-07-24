@@ -11,25 +11,113 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { modelProfileFixture } from "../fixtures/workspace";
+import type {
+  ModelProfile,
+  ModelProfileInput,
+} from "../mvp1/contracts";
 
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
+  profiles?: ModelProfile[];
+  defaultProfileId?: string;
+  onCreateProfile?: (input: ModelProfileInput) => Promise<ModelProfile>;
+  onTestProfile?: (profileId: string) => Promise<ModelProfile>;
+  onSetDefaultProfile?: (profileId: string) => Promise<void>;
 }
 
-export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
+export function SettingsDialog({
+  open,
+  onClose,
+  profiles = [],
+  defaultProfileId = "",
+  onCreateProfile,
+  onTestProfile,
+  onSetDefaultProfile,
+}: SettingsDialogProps) {
   const [provider, setProvider] = useState<"ollama" | "openai">("ollama");
   const [apiKey, setApiKey] = useState("");
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [ollamaName, setOllamaName] = useState(modelProfileFixture.name);
+  const [ollamaModel, setOllamaModel] = useState(modelProfileFixture.modelId);
+  const [profileName, setProfileName] = useState("Remote API");
+  const [modelName, setModelName] = useState("model-name");
+  const [baseUrl, setBaseUrl] = useState("https://api.example.com/v1");
+  const [externalTransferConfirmed, setExternalTransferConfirmed] =
+    useState(false);
 
   if (!open) return null;
 
-  const saveKey = (event: React.FormEvent) => {
+  const saveKey = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!apiKey.trim()) return;
+    const credential = apiKey;
     setKeyConfigured(true);
     setApiKey("");
+    if (onCreateProfile) {
+      if (!externalTransferConfirmed) {
+        setMessage("Credential staged. Confirm external data transfer to create the profile.");
+        return;
+      }
+      try {
+        const profile = await onCreateProfile({
+          displayName: profileName,
+          provider: "openai_compatible",
+          baseUrl,
+          modelName,
+          apiKey: credential,
+          externalTransferConfirmed,
+        });
+        setMessage(`${profile.displayName} was created. Test it before setting it as default.`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Profile creation failed.");
+        return;
+      }
+    }
+  };
+
+  const testProfile = async (profileId: string) => {
+    if (!onTestProfile) return;
+    try {
+      const profile = await onTestProfile(profileId);
+      setMessage(
+        profile.status === "active"
+          ? `${profile.displayName} connected in ${profile.latencyMs} ms.`
+          : `${profile.displayName} is ${profile.status}.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Connection test failed.");
+    }
+  };
+
+  const setDefaultProfile = async (profileId: string) => {
+    if (!onSetDefaultProfile) return;
+    try {
+      await onSetDefaultProfile(profileId);
+      setMessage("Workspace default model updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Default model update failed.");
+    }
+  };
+
+  const createOllamaProfile = async () => {
+    if (!onCreateProfile) {
+      setMessage("Local Ollama profile is ready.");
+      return;
+    }
+    try {
+      const profile = await onCreateProfile({
+        displayName: ollamaName,
+        provider: "ollama",
+        baseUrl: "",
+        modelName: ollamaModel,
+        externalTransferConfirmed: true,
+      });
+      setMessage(`${profile.displayName} was created. Test it before setting it as default.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Profile creation failed.");
+    }
   };
 
   return (
@@ -89,6 +177,44 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           <section className="settings-section">
             <h3>Model profile</h3>
             <p>Choose the model provider used by this vault.</p>
+            {profiles.length > 0 && (
+              <div className="model-profile-list" data-testid="model-profile-list">
+                {profiles.map((profile) => (
+                  <article key={profile.id} data-testid={`model-profile-${profile.id}`}>
+                    <span>
+                      <strong>{profile.displayName}</strong>
+                      <small>
+                        {profile.modelName} · {profile.status}
+                        {profile.latencyMs !== null ? ` · ${profile.latencyMs} ms` : ""}
+                        {profile.capabilities.streaming ? " · streaming" : ""}
+                        {profile.capabilities.structuredOutput
+                          ? " · structured output"
+                          : ""}
+                      </small>
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => void testProfile(profile.id)}
+                      >
+                        Test
+                      </button>
+                      <button
+                        className="mod-cta"
+                        type="button"
+                        disabled={
+                          profile.status !== "active" ||
+                          profile.id === defaultProfileId
+                        }
+                        onClick={() => void setDefaultProfile(profile.id)}
+                      >
+                        {profile.id === defaultProfileId ? "Default" : "Set default"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
             <div className="provider-tabs" role="tablist" aria-label="模型提供商">
               <button
                 type="button"
@@ -112,11 +238,17 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               <div className="settings-fields">
                 <label>
                   <span>Profile name</span>
-                  <input defaultValue={modelProfileFixture.name} />
+                  <input
+                    value={ollamaName}
+                    onChange={(event) => setOllamaName(event.target.value)}
+                  />
                 </label>
                 <label>
                   <span>Model ID</span>
-                  <input defaultValue={modelProfileFixture.modelId} />
+                  <input
+                    value={ollamaModel}
+                    onChange={(event) => setOllamaModel(event.target.value)}
+                  />
                 </label>
                 <label>
                   <span>Server endpoint</span>
@@ -124,40 +256,42 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 </label>
                 <div className="settings-row">
                   <span>
-                    Test connection
-                    <small>The local model is currently unavailable.</small>
+                    Create profile
+                    <small>Add this server-managed Ollama model to the vault.</small>
                   </span>
                   <button
                     className="mod-cta"
                     type="button"
-                    onClick={() => setMessage("Connection unavailable · Ollama is offline")}
+                    onClick={() => void createOllamaProfile()}
                   >
-                    Test
-                  </button>
-                </div>
-                <div className="settings-row">
-                  <span>
-                    Workspace default
-                    <small>Use this profile for queries in the current vault.</small>
-                  </span>
-                  <button
-                    className="mod-cta"
-                    type="button"
-                    onClick={() => setMessage("Local Ollama is the workspace default")}
-                  >
-                    Set as default
+                    Create
                   </button>
                 </div>
               </div>
             ) : (
               <form className="settings-fields" onSubmit={saveKey}>
                 <label>
+                  <span>Profile name</span>
+                  <input
+                    value={profileName}
+                    onChange={(event) => setProfileName(event.target.value)}
+                  />
+                </label>
+                <label>
                   <span>Base URL</span>
-                  <input placeholder="https://api.example.com/v1" />
+                  <input
+                    value={baseUrl}
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                    placeholder="https://api.example.com/v1"
+                  />
                 </label>
                 <label>
                   <span>Model ID</span>
-                  <input placeholder="model-name" />
+                  <input
+                    value={modelName}
+                    onChange={(event) => setModelName(event.target.value)}
+                    placeholder="model-name"
+                  />
                 </label>
                 <label>
                   <span>API Key</span>
@@ -175,9 +309,25 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     ? "API Key configured. The stored value cannot be read."
                     : "No API Key configured."}
                 </p>
+                {onCreateProfile && (
+                  <label className="external-transfer-confirmation">
+                    <input
+                      type="checkbox"
+                      checked={externalTransferConfirmed}
+                      onChange={(event) =>
+                        setExternalTransferConfirmed(event.target.checked)
+                      }
+                    />
+                    <span>
+                      I understand source content may be sent to this external endpoint.
+                    </span>
+                  </label>
+                )}
                 <button className="mod-cta save-key" type="submit" disabled={!apiKey.trim()}>
                   <Check />
-                  Save credential
+                  {onCreateProfile
+                    ? "Save credential and create profile"
+                    : "Save credential"}
                 </button>
               </form>
             )}

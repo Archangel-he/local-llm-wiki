@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Obsidian-style MVP 0 workspace", () => {
+test.describe("Obsidian-style workspace", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
   });
@@ -34,6 +34,11 @@ test.describe("Obsidian-style MVP 0 workspace", () => {
   }) => {
     await page.getByTestId("tree-item-wiki-entities").click();
     await expect(page.getByTestId("wiki-title")).toHaveText("Lin");
+    await expect(
+      page
+        .frameLocator('[data-testid="graph-repro-frame"]')
+        .locator("#graph"),
+    ).toHaveAttribute("data-selected-node", "node-b");
 
     await page
       .getByTestId("graph-node-node-d")
@@ -152,5 +157,95 @@ test.describe("Obsidian-style MVP 0 workspace", () => {
         .frameLocator('[data-testid="graph-repro-frame"]')
         .locator("#graph"),
     ).toBeVisible();
+  });
+
+  test("ingests Markdown into the tree, Wiki, graph and system views", async ({
+    page,
+  }) => {
+    await page.getByTestId("source-upload-input").setInputFiles({
+      name: "aurora-brief.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from(
+        "# Aurora Brief\n\nA source note linked to [[Project Aurora]].",
+      ),
+    });
+
+    await expect(page.getByTestId("job-status")).toContainText("completed", {
+      timeout: 3_000,
+    });
+    await expect(page.getByTestId("graph-panel")).toHaveAttribute(
+      "data-node-count",
+      "5",
+    );
+    await expect(page.getByTestId("graph-panel")).toHaveAttribute(
+      "data-edge-count",
+      "3",
+    );
+    const renderedGraph = page
+      .frameLocator('[data-testid="graph-repro-frame"]')
+      .locator("#graph");
+    await expect(renderedGraph).toHaveAttribute("data-node-count", "5");
+    await expect(renderedGraph).toHaveAttribute("data-edge-count", "3");
+    await page
+      .getByTestId("file-tree")
+      .getByRole("button", { name: "Aurora Brief", exact: true })
+      .click();
+    await expect(page.getByTestId("wiki-title")).toHaveText("Aurora Brief");
+    await expect(page.getByTestId("wiki-panel")).toContainText(
+      "Project Aurora",
+    );
+
+    await page.getByRole("button", { name: "Index", exact: true }).click();
+    await expect(page.getByTestId("wiki-panel")).toContainText("Aurora Brief");
+    await expect(page.getByTestId("wiki-panel")).toContainText(
+      "Read-only system view",
+    );
+    await page.getByRole("button", { name: "Activity", exact: true }).click();
+    await expect(page.getByTestId("wiki-panel")).toContainText(
+      "aurora-brief.md ingested",
+    );
+
+    await page
+      .getByRole("button", { name: "Preview Obsidian export" })
+      .click();
+    await expect(page.getByTestId("export-preview")).toContainText(
+      "Obsidian Vault export preview",
+    );
+    await expect(page.getByTestId("export-preview")).toContainText("aliases:");
+  });
+
+  test("creates, tests and activates a custom model profile", async ({
+    page,
+  }) => {
+    await page.getByTestId("model-settings-trigger").click();
+    await expect(
+      page.getByTestId("model-profile-list").locator("article"),
+    ).toHaveCount(1);
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(
+      page.getByTestId("model-profile-list").locator("article"),
+    ).toHaveCount(2);
+    await page
+      .getByRole("tab", { name: "OpenAI-compatible API" })
+      .click();
+    await page.getByTestId("api-key-input").fill("e2e-secret-value");
+    await page
+      .getByLabel(
+        "I understand source content may be sent to this external endpoint.",
+      )
+      .check();
+    await page
+      .getByRole("button", { name: "Save credential and create profile" })
+      .click();
+
+    const profile = page
+      .locator('[data-testid^="model-profile-profile-"]')
+      .filter({ hasText: "Remote API" });
+    await expect(profile).toContainText("Remote API");
+    await profile.getByRole("button", { name: "Test", exact: true }).click();
+    await expect(profile).toContainText("active");
+    await profile.getByRole("button", { name: "Set default" }).click();
+    await expect(profile.getByRole("button", { name: "Default" })).toBeDisabled();
+    await expect(page.locator("body")).not.toContainText("e2e-secret-value");
   });
 });

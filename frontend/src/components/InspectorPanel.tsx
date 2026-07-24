@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { WikiPage } from "../types";
+import { MarkdownPreview } from "./MarkdownPreview";
 
 interface InspectorPanelProps {
   page: WikiPage;
@@ -106,10 +107,11 @@ export function InspectorPanel({
               <strong>{page.revision}</strong>
             </div>
             <div className="note-preview">
+              {page.systemView && (
+                <span className="system-view-badge">Read-only system view</span>
+              )}
               <p className="note-lead">{page.summary}</p>
-              {page.body.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
+              <MarkdownPreview blocks={page.body} />
               <h3>Sources</h3>
               {page.sources.map((source) => (
                 <button className="internal-link" type="button" key={source}>

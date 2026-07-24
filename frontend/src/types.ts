@@ -12,6 +12,7 @@ export interface WikiPage {
   sources: string[];
   backlinks: string[];
   revision: number;
+  systemView?: "index" | "activity";
 }
 
 export interface GraphNode {
@@ -28,7 +29,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  type: "wikilink";
+  type: "wikilink" | "citation" | "derived_from";
   evidence: string;
 }
 
