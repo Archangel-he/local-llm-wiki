@@ -107,6 +107,13 @@ export interface ModelProfileInput {
   externalTransferConfirmed: boolean;
 }
 
+export interface ModelDiscoveryInput {
+  profileId?: string;
+  provider: "ollama" | "openai_compatible";
+  baseUrl: string;
+  apiKey?: string;
+}
+
 export interface ExportPreview {
   directories: string[];
   files: Array<{ path: string; preview: string }>;
@@ -124,11 +131,18 @@ export interface ExportJob {
 
 export interface Mvp1Client {
   loadWorkspace(): Promise<WorkspaceData>;
+  loadSourceContent(sourceId: string): Promise<string>;
   uploadSource(file: File): Promise<UploadResult>;
   subscribeJob(jobId: string, onEvent: (event: JobEvent) => void): () => void;
   retryJob(jobId: string): Promise<IngestJob>;
   cancelJob(jobId: string): Promise<IngestJob>;
   createModelProfile(input: ModelProfileInput): Promise<ModelProfile>;
+  updateModelProfile(
+    profileId: string,
+    input: ModelProfileInput,
+  ): Promise<ModelProfile>;
+  deleteModelProfile(profileId: string): Promise<void>;
+  discoverModels(input: ModelDiscoveryInput): Promise<string[]>;
   testModelProfile(profileId: string): Promise<ModelProfile>;
   setDefaultModelProfile(profileId: string): Promise<void>;
   getModelProfiles(): Promise<{

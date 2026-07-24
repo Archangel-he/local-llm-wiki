@@ -1,37 +1,35 @@
 import {
   Bot,
-  ChevronDown,
-  Command,
+  BookOpen,
   Hexagon,
-  Minus,
-  MoreHorizontal,
+  MessageSquare,
   Network,
   PanelRightOpen,
-  Plus,
-  Search,
-  Square,
-  X,
+  Settings,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import { AskPanel } from "./components/AskPanel";
 import { ExportPreviewDialog } from "./components/ExportPreviewDialog";
 import { FileExplorer } from "./components/FileExplorer";
 import { GraphWorkspace } from "./components/GraphWorkspace";
 import { HealthPopover } from "./components/HealthPopover";
 import { InspectorPanel } from "./components/InspectorPanel";
-import { Ribbon } from "./components/Ribbon";
 import { SettingsDialog } from "./components/SettingsDialog";
-import {
-  defaultWorkspace,
-  modelProfileFixture,
-} from "./fixtures/workspace";
+import { defaultWorkspace } from "./fixtures/workspace";
+import { LanguageProvider, useI18n } from "./i18n";
 import { usePanelResize } from "./hooks/usePanelResize";
 import { useMvp1Workspace } from "./mvp1/useMvp1Workspace";
 
 type MaximizedPanel = "graph" | "ask" | "wiki" | null;
 
-function App() {
+function WorkspaceApp() {
+  const { t } = useI18n();
   const workspace = useMvp1Workspace();
+  const loadSourcePage = workspace.loadSourcePage;
   const [selectedPageId, setSelectedPageId] = useState("page-a");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
@@ -61,19 +59,44 @@ function App() {
     invert: true,
   });
 
-  const selectedPage = useMemo(
+  const currentPageId = useMemo(
     () =>
-      workspace.data.pages.find((page) => page.id === selectedPageId) ??
-      workspace.data.pages[0],
+      workspace.data.pages.some((page) => page.id === selectedPageId)
+        ? selectedPageId
+        : workspace.data.pages[0]?.id ?? selectedPageId,
     [selectedPageId, workspace.data.pages],
+  );
+  const selectedPage = useMemo(
+    () => workspace.data.pages.find((page) => page.id === currentPageId),
+    [currentPageId, workspace.data.pages],
   );
   const defaultProfile = workspace.profiles.find(
     (profile) => profile.id === workspace.defaultProfileId,
   );
 
-  const selectPage = useCallback((pageId: string) => {
-    setSelectedPageId(pageId);
-  }, []);
+  const selectPage = useCallback(
+    (pageId: string) => {
+      setSelectedPageId(pageId);
+      setRightOpen(true);
+      void loadSourcePage(pageId);
+    },
+    [loadSourcePage],
+  );
+
+  const resolveReference = useCallback(
+    (reference: string) => {
+      const token = reference.split(" · ")[0].trim();
+      return (
+        workspace.data.pages.find(
+          (page) =>
+            page.id === token ||
+            page.id === `raw-${token}` ||
+            page.title === token,
+        )?.id ?? null
+      );
+    },
+    [workspace.data.pages],
+  );
 
   const toggleMaximized = (panel: Exclude<MaximizedPanel, null>) => {
     setMaximizedPanel((current) => (current === panel ? null : panel));
@@ -97,41 +120,48 @@ function App() {
           <span>{defaultWorkspace.name}</span>
         </div>
 
-        <button className="global-search" type="button">
-          <Search aria-hidden="true" />
-          <span>Search...</span>
-          <kbd>
-            <Command aria-hidden="true" />K
-          </kbd>
-        </button>
+        <span className="window-document">
+          {selectedPage?.title ?? t("knowledgeGraph")}
+        </span>
 
-        <span className="window-document">local-llm-wiki</span>
-
-        <div className="window-controls" aria-hidden="true">
-          <button type="button" tabIndex={-1}>
-            <Minus />
+        <nav className="titlebar-actions" aria-label={t("primaryActions")}>
+          <button
+            type="button"
+            className={leftOpen ? "is-active" : ""}
+            aria-pressed={leftOpen}
+            title={leftOpen ? t("hideLibrary") : t("showLibrary")}
+            onClick={() => setLeftOpen((value) => !value)}
+          >
+            <BookOpen />
+            <span>{t("library")}</span>
           </button>
-          <button type="button" tabIndex={-1}>
-            <Square />
+          <button
+            type="button"
+            className={askOpen ? "is-active" : ""}
+            aria-pressed={askOpen}
+            title={askOpen ? t("hideAsk") : t("showAsk")}
+            onClick={() => setAskOpen((value) => !value)}
+          >
+            <MessageSquare />
+            <span>{t("askPanel")}</span>
           </button>
-          <button type="button" tabIndex={-1}>
-            <X />
+          <button
+            type="button"
+            data-testid="model-settings-trigger"
+            title={t("settings")}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings />
+            <span>{t("settings")}</span>
           </button>
-        </div>
+        </nav>
       </header>
 
       <div className="workbench">
-        <Ribbon
-          leftOpen={leftOpen}
-          onToggleLeft={() => setLeftOpen((value) => !value)}
-          onToggleAsk={() => setAskOpen((value) => !value)}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
-
         {leftOpen && (
           <>
             <FileExplorer
-              selectedPageId={selectedPageId}
+              selectedPageId={currentPageId}
               onSelectPage={selectPage}
               sections={workspace.treeSections}
               jobs={workspace.data.jobs}
@@ -146,7 +176,7 @@ function App() {
             <div
               className="pane-resizer vertical"
               role="separator"
-              aria-label="调整文件栏宽度"
+              aria-label={t("resizeLibrary")}
               aria-orientation="vertical"
               aria-valuemin={200}
               aria-valuemax={360}
@@ -161,30 +191,19 @@ function App() {
 
         <section className="editor-region">
           <div className="workspace-tabs">
-            <button className="workspace-tab is-active" type="button">
+            <div className="workspace-heading">
               <Network aria-hidden="true" />
-              <span>Graph view</span>
-              <X className="tab-close" aria-hidden="true" />
-            </button>
-            <span className="workspace-tabs-spacer" />
-            <button type="button" aria-label="新建标签页" title="New tab">
-              <Plus />
-            </button>
-            <button type="button" aria-label="标签页菜单" title="Tab menu">
-              <ChevronDown />
-            </button>
-            <button type="button" aria-label="更多选项" title="More options">
-              <MoreHorizontal />
-            </button>
+              <strong>{t("knowledgeGraph")}</strong>
+            </div>
             {!rightOpen && (
               <button
                 className="right-sidebar-reopen"
                 type="button"
-                aria-label="展开右侧栏"
-                title="Open right sidebar"
+                title={t("showDetails")}
                 onClick={() => setRightOpen(true)}
               >
                 <PanelRightOpen />
+                <span>{t("showDetails")}</span>
               </button>
             )}
           </div>
@@ -193,7 +212,7 @@ function App() {
             <GraphWorkspace
               graphNodes={workspace.data.graphNodes}
               graphEdges={workspace.data.graphEdges}
-              selectedPageId={selectedPageId}
+              selectedPageId={currentPageId}
               onSelectPage={selectPage}
               maximized={maximizedPanel === "graph"}
               onToggleMaximize={() => toggleMaximized("graph")}
@@ -203,7 +222,7 @@ function App() {
               <div
                 className="pane-resizer horizontal"
                 role="separator"
-                aria-label="调整问答区域高度"
+                aria-label={t("resizeAsk")}
                 aria-orientation="horizontal"
                 aria-valuemin={160}
                 aria-valuemax={380}
@@ -217,19 +236,19 @@ function App() {
 
             <AskPanel
               open={askOpen}
-              onToggle={() => setAskOpen((value) => !value)}
               maximized={maximizedPanel === "ask"}
               onToggleMaximize={() => toggleMaximized("ask")}
+              model={defaultProfile}
             />
           </div>
         </section>
 
-        {rightOpen && (
+        {rightOpen && selectedPage && (
           <>
             <div
               className="pane-resizer vertical"
               role="separator"
-              aria-label="调整 Wiki 栏宽度"
+              aria-label={t("resizeWiki")}
               aria-orientation="vertical"
               aria-valuemin={250}
               aria-valuemax={480}
@@ -239,46 +258,43 @@ function App() {
               onKeyDown={rightPanel.onKeyDown}
               data-testid="right-resizer"
             />
-            {selectedPage && (
-              <InspectorPanel
-                page={selectedPage}
-                onClose={() => setRightOpen(false)}
-                maximized={maximizedPanel === "wiki"}
-                onToggleMaximize={() => toggleMaximized("wiki")}
-              />
-            )}
+            <InspectorPanel
+              page={selectedPage}
+              onClose={() => setRightOpen(false)}
+              maximized={maximizedPanel === "wiki"}
+              onToggleMaximize={() => toggleMaximized("wiki")}
+              resolveReference={resolveReference}
+              onSelectPage={selectPage}
+            />
           </>
         )}
       </div>
 
       <footer className="statusbar">
         <div className="statusbar-left">
-          <button type="button" title="Command palette">
-            <Command aria-hidden="true" />
-          </button>
-          <span>Local vault</span>
+          <span>{t("localVault")}</span>
           <span className="status-separator" />
-          <span>{selectedPage?.title ?? "Loading vault..."}</span>
+          <span>{selectedPage?.title ?? t("loadingVault")}</span>
         </div>
         <div className="statusbar-right">
-          <button
-            className="model-status"
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-          >
+          <span className="model-status">
             <Bot aria-hidden="true" />
             <span>
               {defaultProfile
                 ? `${defaultProfile.displayName} · ${defaultProfile.modelName}`
-                : `${modelProfileFixture.name} · ${modelProfileFixture.modelId}`}
+                : t("noDefaultModel")}
             </span>
             <i
               className={`status-dot ${defaultProfile?.status === "active" ? "ok" : "degraded"}`}
               aria-hidden="true"
             />
-          </button>
-          <span>{workspace.data.graphNodes.length} nodes</span>
-          <span>{workspace.data.graphEdges.length} links</span>
+          </span>
+          <span>
+            {workspace.data.graphNodes.length} {t("nodes")}
+          </span>
+          <span>
+            {workspace.data.graphEdges.length} {t("links")}
+          </span>
           <div className="health-anchor">
             <button
               className="health-trigger"
@@ -288,7 +304,7 @@ function App() {
               data-testid="health-trigger"
             >
               <i className="status-dot degraded" aria-hidden="true" />
-              Degraded
+              {t("systemHealth")}
             </button>
             <HealthPopover open={healthOpen} />
           </div>
@@ -301,6 +317,9 @@ function App() {
         profiles={workspace.profiles}
         defaultProfileId={workspace.defaultProfileId}
         onCreateProfile={workspace.createProfile}
+        onUpdateProfile={workspace.updateProfile}
+        onDeleteProfile={workspace.deleteProfile}
+        onDiscoverModels={workspace.discoverModels}
         onTestProfile={workspace.testProfile}
         onSetDefaultProfile={workspace.setDefaultProfile}
       />
@@ -316,4 +335,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <LanguageProvider>
+      <WorkspaceApp />
+    </LanguageProvider>
+  );
+}

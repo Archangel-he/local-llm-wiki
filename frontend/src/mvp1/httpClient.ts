@@ -6,6 +6,7 @@ import type {
   IngestJob,
   JobEvent,
   JobStage,
+  ModelDiscoveryInput,
   ModelProfile,
   ModelProfileInput,
   Mvp1Client,
@@ -271,16 +272,12 @@ export class HttpMvp1Client implements Mvp1Client {
       Promise.all(
         tree.sources.map(async (item): Promise<SourceRecord> => {
           const metadata = await this.request<ApiSource>(`/sources/${item.id}`);
-          const contentResponse = await fetch(`${this.root}/sources/${item.id}/content`, {
-            credentials: "same-origin",
-          });
-          const content = contentResponse.ok ? await contentResponse.text() : "";
           return {
             id: metadata.id,
             filename: metadata.filename,
             sha256: metadata.sha256,
             status: metadata.status,
-            content,
+            content: "",
             uploadedAt: metadata.created_at,
             pageId: `raw-${metadata.id}`,
           };
@@ -402,13 +399,28 @@ export class HttpMvp1Client implements Mvp1Client {
         .map((job) =>
           jobFromApi(job, filenameBySource.get(job.source_id ?? "") ?? "Source ingest"),
         ),
-      pages: [...rawPages, ...contentPages, indexPage, activityPage],
+      pages: [...contentPages, ...rawPages, indexPage, activityPage],
       graphNodes,
       graphEdges,
       activity,
     };
     this.lastWorkspace = data;
     return data;
+  }
+
+  async loadSourceContent(sourceId: string) {
+    const response = await fetch(`${this.root}/sources/${sourceId}/content`, {
+      credentials: "same-origin",
+      headers: { Accept: "text/plain" },
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+      throw new Mvp1ClientError(
+        body.error?.code ?? "SOURCE_CONTENT_UNAVAILABLE",
+        body.error?.message ?? "The source content is unavailable.",
+      );
+    }
+    return response.text();
   }
 
   async uploadSource(file: File): Promise<UploadResult> {
@@ -515,6 +527,49 @@ export class HttpMvp1Client implements Mvp1Client {
       }),
     });
     return profileFromApi(profile);
+  }
+
+  async updateModelProfile(profileId: string, input: ModelProfileInput) {
+    const profile = await this.request<ApiProfile>(
+      `/model-profiles/${profileId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: input.displayName,
+          base_url:
+            input.provider === "ollama"
+              ? input.baseUrl || "http://host.docker.internal:11434"
+              : input.baseUrl,
+          model_name: input.modelName,
+          ...(input.apiKey ? { api_key: input.apiKey } : {}),
+        }),
+      },
+    );
+    return profileFromApi(profile);
+  }
+
+  async deleteModelProfile(profileId: string) {
+    await this.request<void>(`/model-profiles/${profileId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async discoverModels(input: ModelDiscoveryInput) {
+    const result = await this.request<{ items: string[] }>(
+      "/model-profiles/discover",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile_id: input.profileId,
+          provider: input.provider,
+          base_url: input.baseUrl,
+          api_key: input.apiKey,
+        }),
+      },
+    );
+    return result.items;
   }
 
   async testModelProfile(profileId: string) {

@@ -11,6 +11,7 @@ import type {
   ExportPreview,
   ExportJob,
   ModelProfile,
+  ModelDiscoveryInput,
   ModelProfileInput,
   WorkspaceData,
 } from "./contracts";
@@ -80,23 +81,13 @@ function buildTreeSections(data: WorkspaceData): TreeSection[] {
           icon: "warning",
           children: [],
         },
-    {
-      id: "recent",
-      label: "Recent",
-      icon: "folder",
-      children: data.activity.map((entry) => ({
-        id: `recent-${entry.id}`,
-        label: entry.label,
-        pageId: entry.pageId,
-        kind: "file" as const,
-      })),
-    },
   ];
 }
 
 export function useMvp1Workspace() {
   const client = useMemo(() => getMvp1Client(), []);
   const subscriptions = useRef(new Map<string, () => void>());
+  const sourceLoads = useRef(new Map<string, "loading" | "loaded" | "failed">());
   const [data, setData] = useState<WorkspaceData>(initialData);
   const [profiles, setProfiles] = useState<ModelProfile[]>([]);
   const [defaultProfileId, setDefaultProfileId] = useState("");
@@ -110,8 +101,46 @@ export function useMvp1Workspace() {
   const exportSubscription = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(async () => {
+    sourceLoads.current.clear();
     setData(await client.loadWorkspace());
   }, [client]);
+
+  const loadSourcePage = useCallback(
+    async (pageId: string) => {
+      const source = data.sources.find((item) => item.pageId === pageId);
+      if (!source || source.content || sourceLoads.current.has(source.id)) return;
+
+      sourceLoads.current.set(source.id, "loading");
+      try {
+        const content = await client.loadSourceContent(source.id);
+        sourceLoads.current.set(source.id, "loaded");
+        setData((current) => ({
+          ...current,
+          sources: current.sources.map((item) =>
+            item.id === source.id ? { ...item, content } : item,
+          ),
+          pages: current.pages.map((page) =>
+            page.id === pageId ? { ...page, body: [content] } : page,
+          ),
+        }));
+      } catch (error) {
+        sourceLoads.current.set(source.id, "failed");
+        const message =
+          error instanceof Error
+            ? error.message
+            : "The source content is unavailable.";
+        setData((current) => ({
+          ...current,
+          pages: current.pages.map((page) =>
+            page.id === pageId
+              ? { ...page, body: [`Source content unavailable: ${message}`] }
+              : page,
+          ),
+        }));
+      }
+    },
+    [client, data.sources],
+  );
 
   const refreshProfiles = useCallback(async () => {
     const result = await client.getModelProfiles();
@@ -243,6 +272,28 @@ export function useMvp1Workspace() {
     [client, refreshProfiles],
   );
 
+  const updateProfile = useCallback(
+    async (profileId: string, input: ModelProfileInput) => {
+      const profile = await client.updateModelProfile(profileId, input);
+      await refreshProfiles();
+      return profile;
+    },
+    [client, refreshProfiles],
+  );
+
+  const deleteProfile = useCallback(
+    async (profileId: string) => {
+      await client.deleteModelProfile(profileId);
+      await refreshProfiles();
+    },
+    [client, refreshProfiles],
+  );
+
+  const discoverModels = useCallback(
+    (input: ModelDiscoveryInput) => client.discoverModels(input),
+    [client],
+  );
+
   const testProfile = useCallback(
     async (profileId: string) => {
       const profile = await client.testModelProfile(profileId);
@@ -320,9 +371,13 @@ export function useMvp1Workspace() {
         ? client.getExportDownloadUrl(exportJob.id)
         : null,
     uploadSource,
+    loadSourcePage,
     retryJob,
     cancelJob,
     createProfile,
+    updateProfile,
+    deleteProfile,
+    discoverModels,
     testProfile,
     setDefaultProfile,
     loadExportPreview,

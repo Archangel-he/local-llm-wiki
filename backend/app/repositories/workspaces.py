@@ -20,7 +20,10 @@ def list_model_profiles(db: Session, workspace_id: uuid.UUID) -> list[ModelProfi
     return list(
         db.scalars(
             select(ModelProfile)
-            .where(ModelProfile.workspace_id == workspace_id)
+            .where(
+                ModelProfile.workspace_id == workspace_id,
+                ModelProfile.status != "revoked",
+            )
             .order_by(ModelProfile.created_at, ModelProfile.id)
         ).all()
     )
@@ -33,5 +36,6 @@ def get_model_profile(
         select(ModelProfile).where(
             ModelProfile.id == profile_id,
             ModelProfile.workspace_id == workspace_id,
+            ModelProfile.status != "revoked",
         )
     )

@@ -1,132 +1,130 @@
-import {
-  Bot,
-  ChevronDown,
-  ChevronUp,
-  Maximize2,
-  Minimize2,
-  Send,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { Bot, Maximize2, Minimize2, Send, Sparkles, X } from "lucide-react";
 import { useState } from "react";
-
-const mockAnswer =
-  "当前资料显示：Project Aurora 于 2025-03-01 启动，负责人是 Lin。";
+import { useI18n } from "../i18n";
+import type { ModelProfile } from "../mvp1/contracts";
 
 interface AskPanelProps {
   open: boolean;
-  onToggle: () => void;
   maximized: boolean;
   onToggleMaximize: () => void;
+  model?: ModelProfile;
 }
 
 export function AskPanel({
   open,
-  onToggle,
   maximized,
   onToggleMaximize,
+  model,
 }: AskPanelProps) {
+  const { language, t } = useI18n();
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<string | null>(null);
+  const [answered, setAnswered] = useState(false);
   const [scope, setScope] = useState("current");
+  const modelLabel = model
+    ? `${model.displayName} · ${model.modelName}`
+    : t("noDefaultModel");
+
+  if (!open) return null;
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!question.trim()) return;
-    setAnswer(mockAnswer);
+    setAnswered(true);
   };
 
   return (
     <section
-      className={`ask-panel${open ? " is-open" : ""}${maximized ? " is-maximized" : ""}`}
+      className={`ask-panel is-open${maximized ? " is-maximized" : ""}`}
       data-testid="query-panel"
-      aria-label="Ask local wiki"
+      aria-label={t("askLocalWiki")}
     >
-      <div className="ask-handle">
-        <button className="ask-toggle" type="button" onClick={onToggle}>
+      <header className="ask-handle">
+        <div className="ask-title">
           <Sparkles aria-hidden="true" />
-          <span>Ask local wiki</span>
-          <small>Local Ollama · offline · Mock mode</small>
-          {open ? <ChevronDown /> : <ChevronUp />}
-        </button>
-        {open && (
-          <button
-            className="ask-maximize"
-            type="button"
-            aria-label={maximized ? "退出问答最大化" : "最大化问答"}
-            onClick={onToggleMaximize}
-          >
-            {maximized ? <Minimize2 /> : <Maximize2 />}
-          </button>
-        )}
-      </div>
-
-      {open && (
-        <div className="ask-body">
-          <div className="ask-thread" aria-live="polite">
-            {answer ? (
-              <article className="answer-message" data-testid="mock-answer">
-                <div className="assistant-avatar">
-                  <Bot aria-hidden="true" />
-                </div>
-                <div>
-                  <span className="answer-label">Mock answer</span>
-                  <p>{answer}</p>
-                  <button type="button" className="citation-pill">
-                    [1] aurora-a.md · line 1
-                  </button>
-                  <button type="button" className="save-answer">
-                    Save to Wiki
-                  </button>
-                </div>
-              </article>
-            ) : (
-              <div className="ask-empty">
-                <Sparkles aria-hidden="true" />
-                <p>Ask a question grounded in this vault.</p>
-              </div>
-            )}
-          </div>
-          <form className="ask-composer" onSubmit={submit}>
-            <select
-              aria-label="问答范围"
-              value={scope}
-              onChange={(event) => setScope(event.target.value)}
-            >
-              <option value="current">Current page</option>
-              <option value="local">Local graph</option>
-              <option value="workspace">Entire vault</option>
-            </select>
-            <label htmlFor="question-input" className="sr-only">
-              输入问题
-            </label>
-            <input
-              id="question-input"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask about this knowledge space..."
-            />
-            {question && (
-              <button
-                className="clear-question"
-                type="button"
-                aria-label="清空问题"
-                onClick={() => setQuestion("")}
-              >
-                <X />
-              </button>
-            )}
-            <button
-              className="send-question"
-              type="submit"
-              aria-label="Ask"
-              disabled={!question.trim()}
-            >
-              <Send />
-            </button>
-          </form>
+          <span>{t("llmWikiAnswer")}</span>
+          <small data-testid="query-model">{modelLabel}</small>
         </div>
-      )}
+        <button
+          className="ask-maximize"
+          type="button"
+          title={maximized ? t("restore") : t("maximize")}
+          aria-label={maximized ? t("restore") : t("maximize")}
+          onClick={onToggleMaximize}
+        >
+          {maximized ? <Minimize2 /> : <Maximize2 />}
+        </button>
+      </header>
+
+      <div className="ask-body">
+        <div className="ask-thread" aria-live="polite">
+          {answered ? (
+            <article className="answer-message" data-testid="query-notice">
+              <div className="assistant-avatar">
+                <Bot aria-hidden="true" />
+              </div>
+              <div>
+                <span className="answer-label">{t("llmWikiAnswer")}</span>
+                <p>
+                  {language === "zh"
+                    ? `当前版本尚未执行真实问答。已选择的模型是 ${modelLabel}；真实检索问答将在 MVP2 接入。`
+                    : `This version does not run a real query yet. The selected model is ${modelLabel}; grounded query will be connected in MVP2.`}
+                </p>
+              </div>
+            </article>
+          ) : (
+            <div className="ask-empty">
+              <Sparkles aria-hidden="true" />
+              <p>{t("askEmpty")}</p>
+            </div>
+          )}
+        </div>
+        <form className="ask-composer" onSubmit={submit}>
+          <select
+            aria-label={t("questionScope")}
+            value={scope}
+            onChange={(event) => setScope(event.target.value)}
+          >
+            <option value="current">{t("currentPage")}</option>
+            <option value="local">{t("localGraph")}</option>
+            <option value="workspace">{t("entireVault")}</option>
+          </select>
+          <label htmlFor="question-input" className="sr-only">
+            {t("askPlaceholder")}
+          </label>
+          <input
+            id="question-input"
+            value={question}
+            onChange={(event) => {
+              setQuestion(event.target.value);
+              setAnswered(false);
+            }}
+            placeholder={t("askPlaceholder")}
+          />
+          {question && (
+            <button
+              className="clear-question"
+              type="button"
+              aria-label={t("clearQuestion")}
+              title={t("clearQuestion")}
+              onClick={() => {
+                setQuestion("");
+                setAnswered(false);
+              }}
+            >
+              <X />
+            </button>
+          )}
+          <button
+            className="send-question"
+            type="submit"
+            aria-label={t("ask")}
+            title={t("ask")}
+            disabled={!question.trim()}
+          >
+            <Send />
+          </button>
+        </form>
+      </div>
     </section>
   );
 }

@@ -31,13 +31,17 @@ describe("App", () => {
     expect(screen.getByTestId("graph-panel")).toBeInTheDocument();
     expect(screen.getByTestId("query-panel")).toBeInTheDocument();
     expect(screen.getByTestId("wiki-panel")).toBeInTheDocument();
-    expect(screen.getByText("Graph view")).toBeInTheDocument();
+    expect(screen.getByText("Knowledge graph")).toBeInTheDocument();
   });
 
-  it("shows the local model and degraded health without blocking content", () => {
+  it("shows the selected model and degraded health without blocking content", async () => {
     render(<App />);
-    expect(screen.getByText(/Local Ollama · qwen3:8b/)).toBeInTheDocument();
-    expect(screen.getByTestId("health-trigger")).toHaveTextContent("Degraded");
+    expect(
+      await screen.findAllByText(/Local Ollama · qwen3:8b/),
+    ).not.toHaveLength(0);
+    expect(screen.getByTestId("health-trigger")).toHaveTextContent(
+      "System health",
+    );
     expect(screen.getByTestId("wiki-title")).toHaveTextContent(
       "Project Aurora",
     );
@@ -76,10 +80,10 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "关闭右侧栏" }));
+    await user.click(screen.getByRole("button", { name: "Close details" }));
     expect(screen.queryByTestId("wiki-panel")).not.toBeInTheDocument();
 
-    const reopen = screen.getByRole("button", { name: "展开右侧栏" });
+    const reopen = screen.getByRole("button", { name: "Show details" });
     expect(reopen).toBeVisible();
     await user.click(reopen);
     expect(screen.getByTestId("wiki-panel")).toBeVisible();

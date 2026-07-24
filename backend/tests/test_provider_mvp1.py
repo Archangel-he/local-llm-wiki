@@ -108,6 +108,32 @@ async def test_openai_structured_generation_and_sse_stream() -> None:
     assert secret not in repr(adapter)
 
 
+async def test_deepseek_structured_generation_uses_json_object() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["response_format"] == {"type": "json_object"}
+        assert body["thinking"] == {"type": "disabled"}
+        assert "JSON Schema" in body["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"ok":true}'}}]},
+        )
+
+    profile = RuntimeModelProfile(
+        profile_id="deepseek-profile",
+        provider="openai_compatible",
+        base_url="https://api.deepseek.com",
+        model_name="deepseek-v4-pro",
+        credential="secret",
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await OpenAICompatibleAdapter(client=client).generate_structured(
+            profile, SCHEMA, MESSAGES, GenerationOptions()
+        )
+
+    assert result.data == {"ok": True}
+
+
 async def test_both_connection_tests_probe_model_and_structured_output() -> None:
     ollama_calls: list[str] = []
 
@@ -145,6 +171,36 @@ async def test_both_connection_tests_probe_model_and_structured_output() -> None
     assert result.reachable and result.model_found
     assert result.structured_output_supported and result.streaming_supported
     assert openai_calls == ["/v1/models", "/v1/chat/completions"]
+
+
+async def test_both_providers_list_models_in_a_stable_order() -> None:
+    def ollama_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/tags"
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "z-model"}, {"model": "a-model"}]},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(ollama_handler)
+    ) as client:
+        models = await OllamaAdapter(client=client).list_models(_profile("ollama"))
+    assert models == ["a-model", "z-model"]
+
+    def openai_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/models"
+        return httpx.Response(
+            200,
+            json={"data": [{"id": "z-model"}, {"id": "a-model"}]},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(openai_handler)
+    ) as client:
+        models = await OpenAICompatibleAdapter(client=client).list_models(
+            _profile("openai_compatible")
+        )
+    assert models == ["a-model", "z-model"]
 
 
 @pytest.mark.parametrize("provider", ["ollama", "openai_compatible"])

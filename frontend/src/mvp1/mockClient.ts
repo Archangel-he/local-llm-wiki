@@ -12,6 +12,7 @@ import type {
   IngestJob,
   JobEvent,
   ModelProfile,
+  ModelDiscoveryInput,
   ModelProfileInput,
   Mvp1Client,
   SourceRecord,
@@ -156,6 +157,14 @@ export class MockMvp1Client implements Mvp1Client {
       graphEdges: this.graphEdges,
       activity: this.activity,
     });
+  }
+
+  async loadSourceContent(sourceId: string) {
+    const source = this.sources.find((item) => item.id === sourceId);
+    if (!source) {
+      throw new Mvp1ClientError("NOT_FOUND", "Source not found.");
+    }
+    return source.content;
   }
 
   async uploadSource(file: File): Promise<UploadResult> {
@@ -401,6 +410,53 @@ export class MockMvp1Client implements Mvp1Client {
     };
     this.profiles = [...this.profiles, profile];
     return clone(profile);
+  }
+
+  async updateModelProfile(profileId: string, input: ModelProfileInput) {
+    const index = this.profiles.findIndex((profile) => profile.id === profileId);
+    const current = this.profiles[index];
+    if (!current || current.provider === "mock") {
+      throw new Mvp1ClientError("NOT_FOUND", "Editable profile not found.");
+    }
+    const profile: ModelProfile = {
+      ...current,
+      displayName: input.displayName,
+      endpointOrigin:
+        input.provider === "ollama"
+          ? "server preset"
+          : new URL(input.baseUrl).origin,
+      modelName: input.modelName,
+      hasCredential: current.hasCredential || Boolean(input.apiKey),
+      status: "untested",
+      lastTestedAt: null,
+      latencyMs: null,
+      capabilities: { streaming: false, structuredOutput: false },
+    };
+    this.profiles[index] = profile;
+    return clone(profile);
+  }
+
+  async deleteModelProfile(profileId: string) {
+    const profile = this.profiles.find((item) => item.id === profileId);
+    if (!profile || profile.provider === "mock") {
+      throw new Mvp1ClientError("NOT_FOUND", "Deletable profile not found.");
+    }
+    this.profiles = this.profiles.filter((item) => item.id !== profileId);
+    if (this.defaultProfileId === profileId) this.defaultProfileId = "";
+  }
+
+  async discoverModels(input: ModelDiscoveryInput) {
+    if (input.provider === "ollama") return ["qwen3:8b", "llama3.2:3b"];
+    if (!input.apiKey && !input.profileId) {
+      throw new Mvp1ClientError(
+        "MODEL_DISCOVERY_FAILED",
+        "Enter an API key before loading models.",
+      );
+    }
+    if (input.baseUrl.includes("deepseek")) {
+      return ["deepseek-v4-flash", "deepseek-v4-pro"];
+    }
+    return ["model-fast", "model-pro"];
   }
 
   async testModelProfile(profileId: string) {

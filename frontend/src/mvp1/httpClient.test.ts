@@ -99,12 +99,16 @@ describe("HttpMvp1Client", () => {
       }),
     );
 
-    const data = await new HttpMvp1Client("", "workspace-1").loadWorkspace();
+    const client = new HttpMvp1Client("", "workspace-1");
+    const data = await client.loadWorkspace();
 
     expect(data.sources[0]).toMatchObject({
       filename: "brief.md",
-      content: "# Brief\n\nRaw content",
+      content: "",
     });
+    await expect(client.loadSourceContent("source-1")).resolves.toBe(
+      "# Brief\n\nRaw content",
+    );
     expect(data.pages.find((page) => page.id === "page-1")).toMatchObject({
       type: "concept",
       aliases: ["briefing"],

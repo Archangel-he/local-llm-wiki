@@ -18,6 +18,8 @@ from app.llm.types import (
 
 @runtime_checkable
 class LLMAdapter(Protocol):
+    async def list_models(self, profile: RuntimeModelProfile) -> list[str]: ...
+
     async def health(self, profile: RuntimeModelProfile) -> LLMHealth: ...
 
     async def test_connection(

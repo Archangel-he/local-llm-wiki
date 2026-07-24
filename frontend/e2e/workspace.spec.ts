@@ -13,7 +13,9 @@ test.describe("Obsidian-style workspace", () => {
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     await expect(page.getByTestId("query-panel")).toBeVisible();
     await expect(page.getByTestId("wiki-panel")).toBeVisible();
-    await expect(page.getByText("Graph view")).toBeVisible();
+    await expect(page.locator(".workspace-heading")).toHaveText(
+      "Knowledge graph",
+    );
     await expect(
       page
         .frameLocator('[data-testid="graph-repro-frame"]')
@@ -61,35 +63,51 @@ test.describe("Obsidian-style workspace", () => {
     await wikiSection.click();
     await expect(page.getByTestId("tree-item-wiki-entities")).toBeVisible();
 
-    await page.getByRole("tab", { name: "搜索" }).click();
-    await page.getByLabel("筛选文件").fill("orphan");
+    await page.getByLabel("Filter files...").fill("orphan");
     await expect(page.getByTestId("tree-item-lint-orphan")).toBeVisible();
     await expect(page.getByTestId("tree-item-raw-a")).toBeHidden();
   });
 
-  test("submits the deterministic mock question for every scope", async ({
+  test("shows the selected model without presenting a fake answer", async ({
     page,
   }) => {
-    await page.getByLabel("问答范围").selectOption("workspace");
-    await page.getByLabel("输入问题").fill("Aurora 什么时候启动？");
-    await page.getByRole("button", { name: "Ask", exact: true }).click();
-    await expect(page.getByTestId("mock-answer")).toContainText("2025-03-01");
-    await expect(page.getByTestId("mock-answer")).toContainText("aurora-a.md");
-    await expect(
-      page.getByRole("button", { name: "Save to Wiki" }),
-    ).toBeVisible();
+    await expect(page.getByText("LLM Wiki answer")).toBeVisible();
+    await expect(page.getByTestId("query-model")).toContainText(
+      "Local Ollama · qwen3:8b",
+    );
+    await page.getByLabel("Answer scope").selectOption("workspace");
+    await page
+      .getByLabel("Ask about this knowledge space...")
+      .fill("When did Aurora start?");
+    await page
+      .getByTestId("query-panel")
+      .getByRole("button", { name: "Ask", exact: true })
+      .click();
+    await expect(page.getByTestId("query-notice")).toContainText(
+      "does not run a real query yet",
+    );
+    await expect(page.getByTestId("query-notice")).not.toContainText(
+      "2025-03-01",
+    );
   });
 
   test("keeps API keys write-only", async ({ page }) => {
     await page.getByTestId("model-settings-trigger").click();
-    await page
-      .getByRole("tab", { name: "OpenAI-compatible API" })
-      .click();
     await page.getByTestId("api-key-input").fill("e2e-secret-value");
-    await page.getByRole("button", { name: "Save credential" }).click();
+    await page
+      .getByRole("button", { name: "Connect & load models" })
+      .click();
+    await page
+      .getByLabel(
+        "I understand source content may be sent to this external endpoint.",
+      )
+      .check();
+    await page
+      .getByRole("button", { name: "Save configuration" })
+      .click();
     await expect(page.getByTestId("api-key-input")).toHaveValue("");
     await expect(page.getByTestId("credential-state")).toContainText(
-      "cannot be read",
+      "never displayed",
     );
     await expect(page.locator("body")).not.toContainText("e2e-secret-value");
   });
@@ -147,10 +165,10 @@ test.describe("Obsidian-style workspace", () => {
       String(initialQuery + 28),
     );
 
-    await page.getByRole("button", { name: "放大" }).click();
-    await page.getByRole("button", { name: "缩小" }).click();
-    await page.getByRole("button", { name: "重置视图" }).click();
-    await page.getByRole("button", { name: "打开图谱设置" }).click();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await page.getByRole("button", { name: "Zoom out" }).click();
+    await page.getByRole("button", { name: "Fit graph" }).click();
+    await page.getByRole("button", { name: "Controls" }).click();
     await page.getByRole("button", { name: "Reheat layout" }).click();
     await expect(
       page
@@ -206,7 +224,7 @@ test.describe("Obsidian-style workspace", () => {
     );
 
     await page
-      .getByRole("button", { name: "Preview Obsidian export" })
+      .getByRole("button", { name: "Export", exact: true })
       .click();
     await expect(page.getByTestId("export-preview")).toContainText(
       "Obsidian Vault export preview",
@@ -218,7 +236,7 @@ test.describe("Obsidian-style workspace", () => {
     await page.getByRole("button", { name: "Close export preview" }).click();
     await page.reload();
     await page
-      .getByRole("button", { name: "Preview Obsidian export" })
+      .getByRole("button", { name: "Export", exact: true })
       .click();
     await expect(page.getByTestId("export-download")).toBeVisible();
   });
@@ -230,31 +248,63 @@ test.describe("Obsidian-style workspace", () => {
     await expect(
       page.getByTestId("model-profile-list").locator("article"),
     ).toHaveCount(1);
-    await page.getByRole("button", { name: "Create", exact: true }).click();
-    await expect(
-      page.getByTestId("model-profile-list").locator("article"),
-    ).toHaveCount(2);
-    await page
-      .getByRole("tab", { name: "OpenAI-compatible API" })
-      .click();
     await page.getByTestId("api-key-input").fill("e2e-secret-value");
+    await page
+      .getByRole("button", { name: "Connect & load models" })
+      .click();
+    await expect(page.getByText("2 models available")).toBeVisible();
+    const modelSelect = page.getByLabel("Model ID");
+    await expect(modelSelect.locator("option")).toHaveCount(2);
+    await modelSelect.selectOption("deepseek-v4-pro");
     await page
       .getByLabel(
         "I understand source content may be sent to this external endpoint.",
       )
       .check();
     await page
-      .getByRole("button", { name: "Save credential and create profile" })
+      .getByRole("button", { name: "Save configuration" })
       .click();
 
     const profile = page
       .locator('[data-testid^="model-profile-profile-"]')
-      .filter({ hasText: "Remote API" });
-    await expect(profile).toContainText("Remote API");
+      .filter({ hasText: "DeepSeek" });
+    await expect(profile).toContainText("deepseek-v4-pro");
     await profile.getByRole("button", { name: "Test", exact: true }).click();
-    await expect(profile).toContainText("active");
-    await profile.getByRole("button", { name: "Set default" }).click();
+    await expect(profile).toContainText("Ready");
+    await profile.getByRole("button", { name: "Use model" }).click();
     await expect(profile.getByRole("button", { name: "Default" })).toBeDisabled();
+
+    await profile.getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Model ID").fill("deepseek-v4-flash");
+    await page
+      .getByRole("button", { name: "Update configuration" })
+      .click();
+    await expect(
+      page.getByTestId("model-profile-list").locator("article"),
+    ).toHaveCount(2);
+    await expect(profile).toContainText("deepseek-v4-flash");
+    await expect(profile).toContainText("Not tested");
     await expect(page.locator("body")).not.toContainText("e2e-secret-value");
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await profile.getByRole("button", { name: "Delete" }).click();
+    await expect(
+      page.getByTestId("model-profile-list").locator("article"),
+    ).toHaveCount(1);
+    await expect(page.getByRole("status")).toContainText("was deleted");
+  });
+
+  test("switches the interface between English and Chinese", async ({
+    page,
+  }) => {
+    await page.getByTestId("model-settings-trigger").click();
+    await page.getByTestId("language-select").selectOption("zh");
+    await expect(page.getByRole("button", { name: "资料库" })).toBeVisible();
+    await expect(page.locator(".workspace-heading")).toHaveText("知识图谱");
+    await page.getByTestId("language-select").selectOption("en");
+    await expect(page.getByRole("button", { name: "Library" })).toBeVisible();
+    await expect(page.locator(".workspace-heading")).toHaveText(
+      "Knowledge graph",
+    );
   });
 });

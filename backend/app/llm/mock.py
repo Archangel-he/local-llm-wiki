@@ -82,6 +82,11 @@ class MockLLMAdapter:
                 retryable=True,
             )
 
+    async def list_models(self, profile: RuntimeModelProfile) -> list[str]:
+        self._record("list_models", profile)
+        self._raise_generation_failure()
+        return [profile.model_name]
+
     async def health(self, profile: RuntimeModelProfile) -> LLMHealth:
         self._record("health", profile)
         if self.scenario in {MockScenario.UNAVAILABLE, MockScenario.TIMEOUT}:

@@ -76,6 +76,17 @@ class ModelProfileUpdate(BaseModel):
     api_key: str | None = Field(default=None, min_length=1, max_length=8192)
 
 
+class ModelDiscoveryRequest(BaseModel):
+    profile_id: uuid.UUID | None = None
+    provider: str
+    base_url: str = Field(min_length=1, max_length=2000)
+    api_key: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
+class ModelDiscoveryResult(BaseModel):
+    items: list[str]
+
+
 class ModelPolicyUpdate(BaseModel):
     default_model_profile_id: uuid.UUID
 

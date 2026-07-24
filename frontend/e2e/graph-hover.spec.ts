@@ -33,14 +33,28 @@ test("moves the reproduction controls into Graph controls", async ({
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveAttribute("data-node-count", "4");
   await expect(canvas).toHaveAttribute("data-edge-count", "2");
+  await expect(canvas).toHaveAttribute("data-label-sizing", "node-relative");
+  await expect(canvas).toHaveAttribute("data-label-hide-below", "4.5");
   await expect(canvas).toHaveAttribute("data-all-nodes-visible", "true");
   await expect(canvas).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(frame.locator(".panel")).toHaveCount(0);
 
-  await page.getByTitle("Graph settings").click();
+  const initialScale = Number(await canvas.getAttribute("data-camera-scale"));
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-camera-scale")))
+    .toBeGreaterThan(initialScale);
+  await page.getByRole("button", { name: "Controls" }).click();
   await page.getByLabel("Node size").fill("0.55");
   await expect(frame.locator("#node-size")).toHaveValue("0.55");
   await expect(canvas).toHaveAttribute("data-node-size", "0.55");
+  await page.getByLabel("Link thickness").fill("2");
+  await expect(frame.locator("#link-thickness")).toHaveValue("2");
+  await expect(canvas).toHaveAttribute("data-link-thickness", "2");
+  await page
+    .locator("label.graph-toggle", { hasText: "Show arrows" })
+    .click();
+  await expect(canvas).toHaveAttribute("data-show-arrows", "true");
   await page.getByLabel("Center force").fill("0.2");
   await expect(frame.locator("#center")).toHaveValue("0.2");
   await page.getByLabel("Repel force").fill("1500");
@@ -58,6 +72,31 @@ test("moves the reproduction controls into Graph controls", async ({
     path: testInfo.outputPath("graph-controls.png"),
     animations: "disabled",
   });
+});
+
+test("scales labels with nodes and hides them completely below the readable size", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const frame = page.frameLocator('[data-testid="graph-repro-frame"]');
+  const canvas = frame.locator("#graph");
+  await expect(canvas).toBeVisible();
+
+  await page.getByRole("button", { name: "Controls" }).click();
+  await page.getByLabel("Node size").fill("0.45");
+  for (let index = 0; index < 10; index += 1) {
+    await page.getByRole("button", { name: "Zoom out" }).click();
+  }
+
+  await expect(canvas).toHaveAttribute("data-camera-scale", "0.200");
+  await expect(canvas).toHaveAttribute("data-visible-label-count", "0");
+
+  await page
+    .locator('[data-testid^="graph-node-"]')
+    .first()
+    .click({ force: true });
+  await expect(canvas).toHaveAttribute("data-focused-node", /\S+/);
+  await expect(canvas).toHaveAttribute("data-visible-label-count", "0");
 });
 
 test("drags a node with the copied reproduction runtime", async ({

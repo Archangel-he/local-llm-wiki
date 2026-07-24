@@ -9,12 +9,15 @@ from sqlalchemy.orm import Session
 from ..core.errors import ApiError
 from ..database import get_db
 from ..models import AuditLog
+from ..llm.errors import LLMAdapterError
 from ..repositories.workspaces import (
     get_model_profile,
     get_workspace,
     list_model_profiles,
 )
 from ..schemas import (
+    ModelDiscoveryRequest,
+    ModelDiscoveryResult,
     ModelPolicyUpdate,
     ModelProfileCreate,
     ModelProfileList,
@@ -25,6 +28,7 @@ from ..schemas import (
 from ..seed import DEFAULT_USER_ID
 from ..services.credentials import CredentialEncryptionUnavailable
 from ..services.model_profiles import (
+    discover_workspace_models,
     InvalidModelProfile,
     create_workspace_profile,
     test_workspace_profile,
@@ -67,8 +71,63 @@ def create_profile(
         raise ApiError(503, "MODEL_PROFILE_INVALID", str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
-        raise ApiError(409, "MODEL_PROFILE_INVALID", "Profile key already exists.") from exc
+        raise ApiError(
+            409,
+            "MODEL_PROFILE_INVALID",
+            "A configuration with this name already exists. Edit it instead.",
+        ) from exc
     return ModelProfileRead.from_model(item)
+
+
+@router.post("/discover", response_model=ModelDiscoveryResult)
+async def discover_models(
+    workspace_id: uuid.UUID,
+    payload: ModelDiscoveryRequest,
+    db: Session = Depends(get_db),
+) -> ModelDiscoveryResult:
+    _require_workspace(db, workspace_id)
+    item = None
+    if payload.profile_id is not None:
+        item = get_model_profile(db, workspace_id, payload.profile_id)
+        if item is None:
+            raise ApiError(404, "NOT_FOUND", "Model profile not found.")
+    try:
+        models = await discover_workspace_models(
+            db,
+            profile=item,
+            provider=payload.provider,
+            base_url=payload.base_url,
+            api_key=payload.api_key,
+        )
+    except InvalidModelProfile as exc:
+        raise ApiError(422, "VALIDATION_ERROR", str(exc)) from exc
+    except CredentialEncryptionUnavailable as exc:
+        raise ApiError(503, "MODEL_DISCOVERY_FAILED", str(exc)) from exc
+    except LLMAdapterError as exc:
+        safe_messages = {
+            "authentication": "The provider rejected this API key.",
+            "endpoint_blocked": "The provider URL is blocked by server policy.",
+            "rate_limited": "The provider rate limit was reached. Try again shortly.",
+            "timeout": "The provider did not respond in time.",
+            "invalid_response": "The provider returned an unsupported model list.",
+            "unavailable": "The provider is currently unavailable.",
+        }
+        raise ApiError(
+            502,
+            "MODEL_DISCOVERY_FAILED",
+            safe_messages.get(
+                exc.category.value,
+                "Could not load models. Check the provider URL and API key.",
+            ),
+            details={"reason": exc.category.value, "retryable": exc.retryable},
+        ) from exc
+    except ValueError as exc:
+        raise ApiError(
+            422,
+            "VALIDATION_ERROR",
+            "The provider configuration is invalid.",
+        ) from exc
+    return ModelDiscoveryResult(items=models)
 
 
 @router.get("/{profile_id}", response_model=ModelProfileRead)

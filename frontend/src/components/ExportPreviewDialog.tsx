@@ -1,4 +1,5 @@
 import { Archive, Download, FileText, Folder, LoaderCircle, X } from "lucide-react";
+import { useI18n } from "../i18n";
 import type { ExportJob, ExportPreview } from "../mvp1/contracts";
 
 export function ExportPreviewDialog({
@@ -16,6 +17,7 @@ export function ExportPreviewDialog({
   onStartExport: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   if (!preview) return null;
 
   return (
@@ -32,11 +34,11 @@ export function ExportPreviewDialog({
           <div>
             <Archive />
             <span>
-              <strong id="export-preview-title">Obsidian Vault export preview</strong>
-              <small>Frontmatter, aliases, type directories and system views</small>
+              <strong id="export-preview-title">{t("exportPreview")}</strong>
+              <small>{t("exportPreviewHelp")}</small>
             </span>
           </div>
-          <button type="button" aria-label="Close export preview" onClick={onClose}>
+          <button type="button" aria-label={t("closeExport")} onClick={onClose}>
             <X />
           </button>
         </header>
@@ -66,7 +68,7 @@ export function ExportPreviewDialog({
             {error ??
               (job
                 ? `${job.status} · ${job.stage}${job.sizeBytes ? ` · ${Math.ceil(job.sizeBytes / 1024)} KiB` : ""}`
-                : "Ready to create a recoverable Vault snapshot.")}
+                : t("exportReady"))}
           </span>
           {downloadUrl && job?.status === "completed" ? (
             <a
@@ -76,7 +78,7 @@ export function ExportPreviewDialog({
               data-testid="export-download"
             >
               <Download />
-              Download Vault ZIP
+              {t("downloadVaultZip")}
             </a>
           ) : (
             <button
@@ -91,8 +93,8 @@ export function ExportPreviewDialog({
                 <Archive />
               )}
               {job?.status === "failed" || job?.status === "cancelled"
-                ? "Create again"
-                : "Create Vault ZIP"}
+                ? t("createAgain")
+                : t("createVaultZip")}
             </button>
           )}
         </footer>

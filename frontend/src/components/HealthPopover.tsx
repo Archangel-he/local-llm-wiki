@@ -2,6 +2,7 @@ import { Activity, CheckCircle2, CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getHealthSnapshot } from "../api/health";
 import { mockHealth } from "../fixtures/workspace";
+import { useI18n } from "../i18n";
 import type { HealthSnapshot } from "../types";
 
 interface HealthPopoverProps {
@@ -9,6 +10,7 @@ interface HealthPopoverProps {
 }
 
 export function HealthPopover({ open }: HealthPopoverProps) {
+  const { t } = useI18n();
   const [health, setHealth] = useState<HealthSnapshot>(mockHealth);
 
   useEffect(() => {
@@ -25,12 +27,12 @@ export function HealthPopover({ open }: HealthPopoverProps) {
   if (!open) return null;
 
   return (
-    <section className="health-popover" data-testid="health-panel" aria-label="系统健康状态">
+    <section className="health-popover" data-testid="health-panel" aria-label={t("systemHealth")}>
       <header>
         <Activity aria-hidden="true" />
         <div>
-          <strong>System health</strong>
-          <span>{health.source === "api" ? "Live API" : "Mock fallback"}</span>
+          <strong>{t("systemHealth")}</strong>
+          <span>{health.source === "api" ? t("liveApi") : t("mockFallback")}</span>
         </div>
       </header>
       <ul>
@@ -49,7 +51,7 @@ export function HealthPopover({ open }: HealthPopoverProps) {
           </li>
         ))}
       </ul>
-      <p>LLM degradation does not block browsing existing Wiki content.</p>
+      <p>{t("healthNote")}</p>
     </section>
   );
 }

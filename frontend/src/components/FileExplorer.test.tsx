@@ -19,8 +19,7 @@ describe("FileExplorer", () => {
     await user.click(screen.getByTestId("tree-item-wiki-entities"));
     expect(onSelect).toHaveBeenCalledWith("page-b");
 
-    await user.click(screen.getByRole("tab", { name: "搜索" }));
-    await user.type(screen.getByLabelText("筛选文件"), "orphan");
+    await user.type(screen.getByLabelText("Filter files..."), "orphan");
     expect(screen.getByTestId("tree-item-lint-orphan")).toBeVisible();
     expect(screen.queryByTestId("tree-item-raw-a")).not.toBeInTheDocument();
   });

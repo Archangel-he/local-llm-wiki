@@ -28,10 +28,13 @@ let lastPointer = null;
 let pointerMoved = false;
 let latestAlpha = 1;
 let autoFit = true;
+let showArrows = false;
 let renderedFocusNode = null;
 let focusBlend = 0;
 let previousRenderTime = performance.now();
 let cameraFocusHandle = null;
+const labelReferenceRadius = 6.3;
+const labelHideBelowRadius = 4.5;
 
 function resize() {
   deviceScale = window.devicePixelRatio || 1;
@@ -212,6 +215,14 @@ function render() {
     : null;
   const grayNode = [82, 82, 89];
   const purpleNode = [124, 110, 230];
+  const maxNodeWeight = Math.max(
+    0,
+    ...[...nodes.values()].map((node) => node.weight),
+  );
+  const sparseLabels = nodes.size > 24 && camera.scale < 0.85;
+  const linkThickness = Number(
+    document.querySelector("#link-thickness").value,
+  );
 
   context.setTransform(deviceScale, 0, 0, deviceScale, 0, 0);
   context.clearRect(0, 0, innerWidth, innerHeight);
@@ -234,15 +245,44 @@ function render() {
       ? mixChannels([100, 100, 108], purpleNode, focusBlend)
       : [100, 100, 108];
 
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const targetRadius =
+      nodeRadius(target) * Math.sqrt(1 / camera.scale) * camera.scale;
+    const lineEnd = showArrows
+      ? {
+          x: b.x - Math.cos(angle) * (targetRadius + 4),
+          y: b.y - Math.sin(angle) * (targetRadius + 4),
+        }
+      : b;
+
     context.beginPath();
     context.moveTo(a.x, a.y);
-    context.lineTo(b.x, b.y);
+    context.lineTo(lineEnd.x, lineEnd.y);
     context.strokeStyle = rgba(edgeChannels, opacity);
-    context.lineWidth = directlyConnected ? 1 + focusBlend * 0.8 : 1;
+    context.lineWidth =
+      linkThickness * (directlyConnected ? 1 + focusBlend * 0.8 : 1);
     context.stroke();
+
+    if (showArrows) {
+      const arrowSize = 4 + linkThickness * 1.5;
+      context.beginPath();
+      context.moveTo(lineEnd.x, lineEnd.y);
+      context.lineTo(
+        lineEnd.x - Math.cos(angle - Math.PI / 6) * arrowSize,
+        lineEnd.y - Math.sin(angle - Math.PI / 6) * arrowSize,
+      );
+      context.lineTo(
+        lineEnd.x - Math.cos(angle + Math.PI / 6) * arrowSize,
+        lineEnd.y - Math.sin(angle + Math.PI / 6) * arrowSize,
+      );
+      context.closePath();
+      context.fillStyle = rgba(edgeChannels, opacity);
+      context.fill();
+    }
   }
 
   let allNodesVisible = true;
+  let visibleLabelCount = 0;
   for (const node of nodes.values()) {
     const point = graphToScreen(node);
     const radius = nodeRadius(node) * Math.sqrt(1 / camera.scale) * camera.scale;
@@ -275,19 +315,51 @@ function render() {
     context.fill();
     context.shadowBlur = 0;
 
-    context.font = `${active ? 600 : 450} 12px Inter, system-ui, sans-serif`;
+    const directlyConnected = distance === 1;
+    if (radius < labelHideBelowRadius) continue;
+
+    const showLabel =
+      active ||
+      directlyConnected ||
+      !sparseLabels ||
+      node.weight >= maxNodeWeight - 1;
+    if (!showLabel) continue;
+
+    const emphasized = active || directlyConnected;
+    const labelFontSize =
+      (emphasized ? 9 : 7) * (radius / labelReferenceRadius);
+    const label = active
+      ? node.label
+      : node.label.length > 22
+        ? `${node.label.slice(0, 21)}…`
+        : node.label;
+    context.font = `${emphasized ? 400 : 300} ${labelFontSize.toFixed(
+      2,
+    )}px "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "top";
     context.fillStyle = active
       ? rgba([48, 45, 65], opacity)
-      : rgba([55, 55, 62], opacity * 0.78);
-    context.fillText(node.label, point.x, point.y + radius + 6);
+      : rgba([55, 55, 62], opacity * (directlyConnected ? 0.72 : 0.48));
+    context.fillText(
+      label,
+      point.x,
+      point.y + radius + Math.max(2, radius * 0.55),
+    );
+    visibleLabelCount += 1;
   }
   canvas.dataset.allNodesVisible = String(allNodesVisible);
   canvas.dataset.focusedNode = renderedFocusNode?.id ?? "";
   canvas.dataset.hoveredNode = hoveredNode?.id ?? "";
   canvas.dataset.focusStrength = focusBlend.toFixed(2);
   canvas.dataset.nodeSize = document.querySelector("#node-size").value;
+  canvas.dataset.linkThickness = String(linkThickness);
+  canvas.dataset.cameraScale = camera.scale.toFixed(3);
+  canvas.dataset.showArrows = String(showArrows);
+  canvas.dataset.labelSizing = "node-relative";
+  canvas.dataset.labelHideBelow = String(labelHideBelowRadius);
+  canvas.dataset.visibleLabelCount = String(visibleLabelCount);
+  canvas.dataset.labelMode = sparseLabels ? "sparse" : "all";
   canvas.dataset.nodeCount = String(nodes.size);
   canvas.dataset.edgeCount = String(links.length);
 
@@ -375,6 +447,27 @@ addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.source !== parent) return;
   if (event.data?.type === "graph-focus-node") {
     focusNode(event.data.pageId);
+    return;
+  }
+  if (event.data?.type === "graph-options") {
+    showArrows = Boolean(event.data.showArrows);
+    changed();
+    return;
+  }
+  if (event.data?.type === "graph-camera") {
+    if (event.data.action === "fit") {
+      autoFit = false;
+      fitCameraToNodes();
+    } else {
+      autoFit = false;
+      const factor = event.data.action === "zoom-in" ? 1.25 : 0.8;
+      const nextScale = Math.max(0.2, Math.min(4, camera.scale * factor));
+      const appliedFactor = nextScale / camera.scale;
+      camera.scale = nextScale;
+      camera.x *= appliedFactor;
+      camera.y *= appliedFactor;
+    }
+    changed();
     return;
   }
   if (

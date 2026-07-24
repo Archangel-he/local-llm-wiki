@@ -1,4 +1,5 @@
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
+import { useI18n } from "../i18n";
 import type { IngestJob } from "../mvp1/contracts";
 
 export function JobStatusPanel({
@@ -14,11 +15,12 @@ export function JobStatusPanel({
   onRetry?: (jobId: string) => void;
   onCancel?: (jobId: string) => void;
 }) {
+  const { t } = useI18n();
   const job = jobs[0];
   if (!job && !message && !error) return null;
 
   return (
-    <section className="job-status-panel" aria-label="Ingest jobs" data-testid="job-status">
+    <section className="job-status-panel" aria-label={t("ingestJobs")} data-testid="job-status">
       {error && (
         <p className="job-notice is-error" role="alert">
           <CircleAlert />
@@ -37,7 +39,7 @@ export function JobStatusPanel({
             <span>
               <strong>{job.filename}</strong>
               <small>
-                {job.progress.stage.replace("_", " ")} · attempt {job.attempt}/{job.maxAttempts}
+                {job.progress.stage.replace("_", " ")} · {t("attempt")} {job.attempt}/{job.maxAttempts}
               </small>
             </span>
             <em>{job.status}</em>
@@ -60,7 +62,7 @@ export function JobStatusPanel({
           <div className="job-actions">
             {job.status === "failed" && job.attempt < job.maxAttempts && (
               <button type="button" onClick={() => onRetry?.(job.id)}>
-                Retry
+                {t("retry")}
               </button>
             )}
             {["queued", "running", "retrying", "cancel_requested"].includes(
@@ -71,7 +73,7 @@ export function JobStatusPanel({
                 disabled={job.status === "cancel_requested"}
                 onClick={() => onCancel?.(job.id)}
               >
-                {job.status === "cancel_requested" ? "Cancelling…" : "Cancel"}
+                {job.status === "cancel_requested" ? t("cancelling") : t("cancel")}
               </button>
             )}
           </div>

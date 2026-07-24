@@ -1,6 +1,8 @@
 from .content import JobList, JobRead, SourceRead, SourceUploadResponse
 from .exports import ExportCreate, ExportRead
 from .model_profile import (
+    ModelDiscoveryRequest,
+    ModelDiscoveryResult,
     ModelPolicyUpdate,
     ModelProfileCreate,
     ModelProfileList,
@@ -28,6 +30,8 @@ __all__ = [
     "ModelProfileCreate",
     "ModelProfileUpdate",
     "ModelProfileTestResult",
+    "ModelDiscoveryRequest",
+    "ModelDiscoveryResult",
     "ModelPolicyUpdate",
     "SourceRead",
     "SourceUploadResponse",

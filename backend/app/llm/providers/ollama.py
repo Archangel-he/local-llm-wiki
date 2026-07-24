@@ -113,6 +113,9 @@ class OllamaAdapter:
             if isinstance(name, str)
         }
 
+    async def list_models(self, profile: RuntimeModelProfile) -> list[str]:
+        return sorted(await self._models(profile), key=str.casefold)
+
     async def health(self, profile: RuntimeModelProfile) -> LLMHealth:
         started = perf_counter()
         try:

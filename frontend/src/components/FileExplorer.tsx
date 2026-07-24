@@ -1,21 +1,17 @@
 import {
-  Bookmark,
   ChevronDown,
   ChevronRight,
-  ChevronsUpDown,
-  FilePlus2,
   FileText,
   FolderClosed,
   FolderOpen,
-  FolderPlus,
   PackageOpen,
   Search,
-  SortAsc,
   TriangleAlert,
   Upload,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { defaultWorkspace, treeSections } from "../fixtures/workspace";
+import { useI18n } from "../i18n";
 import type { IngestJob } from "../mvp1/contracts";
 import type { TreeSection } from "../types";
 import { JobStatusPanel } from "./JobStatusPanel";
@@ -34,6 +30,23 @@ interface FileExplorerProps {
   onCancelJob?: (jobId: string) => void;
 }
 
+function uniqueSectionLabels(section: TreeSection): TreeSection {
+  const counts = new Map<string, number>();
+  for (const item of section.children) {
+    counts.set(item.label, (counts.get(item.label) ?? 0) + 1);
+  }
+  return {
+    ...section,
+    children: section.children.map((item) => ({
+      ...item,
+      label:
+        (counts.get(item.label) ?? 0) > 1
+          ? `${item.label} · ${item.id.slice(-8)}`
+          : item.label,
+    })),
+  };
+}
+
 export function FileExplorer({
   selectedPageId,
   onSelectPage,
@@ -47,25 +60,35 @@ export function FileExplorer({
   onRetryJob,
   onCancelJob,
 }: FileExplorerProps) {
+  const { t } = useI18n();
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [expanded, setExpanded] = useState(
-    () => new Set(suppliedSections.map((section) => section.id)),
-  );
-  const [searching, setSearching] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set(["wiki"]));
   const [query, setQuery] = useState("");
 
   const sections = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return suppliedSections;
     return suppliedSections
-      .map((section) => ({
-        ...section,
-        children: section.children.filter((item) =>
-          item.label.toLocaleLowerCase().includes(normalized),
-        ),
-      }))
+      .filter((section) => section.id !== "recent" && section.children.length > 0)
+      .map(uniqueSectionLabels)
+      .map((section) =>
+        normalized
+          ? {
+              ...section,
+              children: section.children.filter((item) =>
+                item.label.toLocaleLowerCase().includes(normalized),
+              ),
+            }
+          : section,
+      )
       .filter((section) => section.children.length > 0);
   }, [query, suppliedSections]);
+
+  const sectionLabel = (section: TreeSection) => {
+    if (section.id === "raw") return t("rawSources");
+    if (section.id === "wiki") return t("wiki");
+    if (section.id === "lint") return t("issues");
+    return section.label;
+  };
 
   const toggle = (sectionId: string) => {
     setExpanded((current) => {
@@ -78,45 +101,23 @@ export function FileExplorer({
 
   return (
     <aside className="left-sidebar" data-testid="file-tree">
-      <button className="vault-switcher" type="button">
+      <div className="vault-switcher">
+        <FolderOpen aria-hidden="true" />
         <strong>{defaultWorkspace.name}</strong>
-        <ChevronsUpDown aria-hidden="true" />
-      </button>
-
-      <div className="sidebar-tabs" role="tablist" aria-label="左侧栏">
-        <button className="is-active" type="button" role="tab" aria-selected>
-          <FolderOpen aria-hidden="true" />
-          <span className="sr-only">文件</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={false}
-          onClick={() => setSearching((value) => !value)}
-        >
-          <Search aria-hidden="true" />
-          <span className="sr-only">搜索</span>
-        </button>
-        <button type="button" role="tab" aria-selected={false}>
-          <Bookmark aria-hidden="true" />
-          <span className="sr-only">书签</span>
-        </button>
       </div>
 
       <div className="file-toolbar">
-        <span>Files</span>
+        <span>{t("files")}</span>
         <div>
-          <button type="button" aria-label="新建笔记" title="新建笔记">
-            <FilePlus2 />
-          </button>
           <button
+            className="file-action"
             type="button"
-            aria-label="Upload Markdown or TXT"
-            title="Upload source"
+            title={t("uploadTitle")}
             disabled={uploading}
             onClick={() => uploadInputRef.current?.click()}
           >
             <Upload />
+            <span>{t("upload")}</span>
           </button>
           <input
             ref={uploadInputRef}
@@ -131,21 +132,27 @@ export function FileExplorer({
             }}
           />
           <button
+            className="file-action"
             type="button"
-            aria-label="Preview Obsidian export"
-            title="Export preview"
+            title={t("exportTitle")}
             onClick={onExportPreview}
           >
             <PackageOpen />
-          </button>
-          <button type="button" aria-label="新建文件夹" title="新建文件夹">
-            <FolderPlus />
-          </button>
-          <button type="button" aria-label="排序" title="排序">
-            <SortAsc />
+            <span>{t("export")}</span>
           </button>
         </div>
       </div>
+
+      <label className="file-search">
+        <Search aria-hidden="true" />
+        <span className="sr-only">{t("filterFiles")}</span>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("filterFiles")}
+          aria-label={t("filterFiles")}
+        />
+      </label>
 
       <JobStatusPanel
         jobs={jobs}
@@ -155,22 +162,9 @@ export function FileExplorer({
         onCancel={onCancelJob}
       />
 
-      {searching && (
-        <div className="file-search">
-          <Search aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter files..."
-            aria-label="筛选文件"
-            autoFocus
-          />
-        </div>
-      )}
-
-      <nav className="file-tree" aria-label="知识库文件">
+      <nav className="file-tree" aria-label={t("files")}>
         {sections.map((section) => {
-          const isExpanded = expanded.has(section.id);
+          const isExpanded = query ? true : expanded.has(section.id);
           return (
             <section className="tree-group" key={section.id}>
               <button
@@ -188,35 +182,48 @@ export function FileExplorer({
                 ) : (
                   <FolderClosed />
                 )}
-                <span>{section.label}</span>
+                <span>{sectionLabel(section)}</span>
+                <span className="tree-count">{section.children.length}</span>
               </button>
 
               {isExpanded && (
                 <ul>
                   {section.children.map((item) => {
                     const isSelected = item.pageId === selectedPageId;
+                    const content = (
+                      <>
+                        {item.kind === "folder" ? (
+                          <FolderClosed />
+                        ) : (
+                          <FileText />
+                        )}
+                        <span>{item.label}</span>
+                        {item.count !== undefined && (
+                          <span className="tree-count">{item.count}</span>
+                        )}
+                      </>
+                    );
+
                     return (
                       <li key={item.id}>
-                        <button
-                          className={`tree-item${isSelected ? " is-selected" : ""}`}
-                          type="button"
-                          disabled={!item.pageId}
-                          aria-current={isSelected ? "page" : undefined}
-                          onClick={() =>
-                            item.pageId && onSelectPage(item.pageId)
-                          }
-                          data-testid={`tree-item-${item.id}`}
-                        >
-                          {item.kind === "folder" ? (
-                            <FolderClosed />
-                          ) : (
-                            <FileText />
-                          )}
-                          <span>{item.label}</span>
-                          {item.count !== undefined && (
-                            <span className="tree-count">{item.count}</span>
-                          )}
-                        </button>
+                        {item.pageId ? (
+                          <button
+                            className={`tree-item${isSelected ? " is-selected" : ""}`}
+                            type="button"
+                            aria-current={isSelected ? "page" : undefined}
+                            onClick={() => onSelectPage(item.pageId!)}
+                            data-testid={`tree-item-${item.id}`}
+                          >
+                            {content}
+                          </button>
+                        ) : (
+                          <div
+                            className="tree-item is-static"
+                            data-testid={`tree-item-${item.id}`}
+                          >
+                            {content}
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -226,11 +233,6 @@ export function FileExplorer({
           );
         })}
       </nav>
-
-      <div className="sidebar-collapse-hint">
-        <ChevronRight aria-hidden="true" />
-        <span>Local vault</span>
-      </div>
     </aside>
   );
 }

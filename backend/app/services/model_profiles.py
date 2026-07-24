@@ -185,3 +185,26 @@ async def test_workspace_profile(db: Session, profile: ModelProfile) -> Connecti
     )
     db.commit()
     return result
+
+
+async def discover_workspace_models(
+    db: Session,
+    *,
+    profile: ModelProfile | None,
+    provider: str,
+    base_url: str,
+    api_key: str | None,
+) -> list[str]:
+    if provider not in {"ollama", "openai_compatible"}:
+        raise InvalidModelProfile("Provider must be ollama or openai_compatible.")
+    credential = api_key
+    if credential is None and profile is not None:
+        credential = runtime_profile(profile).credential
+    runtime = RuntimeModelProfile(
+        profile_id=str(profile.id) if profile is not None else "model-discovery",
+        provider=provider,
+        base_url=normalize_base_url(base_url),
+        model_name="model-discovery",
+        credential=credential,
+    )
+    return await create_adapter(runtime.provider).list_models(runtime)

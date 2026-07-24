@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterator, Mapping, Sequence
 from time import perf_counter
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -118,6 +119,9 @@ class OpenAICompatibleAdapter:
             if isinstance(item, Mapping) and isinstance(item.get("id"), str)
         }
 
+    async def list_models(self, profile: RuntimeModelProfile) -> list[str]:
+        return sorted(await self._models(profile), key=str.casefold)
+
     async def health(self, profile: RuntimeModelProfile) -> LLMHealth:
         started = perf_counter()
         try:
@@ -159,8 +163,13 @@ class OpenAICompatibleAdapter:
                     "required": ["ok"],
                     "additionalProperties": False,
                 },
-                [ChatMessage("user", 'Return exactly {"ok":true}.')],
-                GenerationOptions(temperature=0.0, max_tokens=32),
+                [
+                    ChatMessage(
+                        "user",
+                        'Return exactly this JSON object with no extra keys: {"ok":true}.',
+                    )
+                ],
+                GenerationOptions(temperature=0.0, max_tokens=128),
             )
             return ConnectionTestResult(
                 reachable=True,
@@ -186,24 +195,47 @@ class OpenAICompatibleAdapter:
         messages: Sequence[ChatMessage],
         options: GenerationOptions,
     ) -> StructuredResponse:
-        body: dict[str, Any] = {
-            "model": profile.model_name,
-            "messages": [
-                {"role": message.role, "content": message.content} for message in messages
-            ],
-            "temperature": options.temperature,
-            "stream": False,
-            "response_format": {
+        wire_messages = [
+            {"role": message.role, "content": message.content} for message in messages
+        ]
+        hostname = (urlsplit(profile.base_url).hostname or "").casefold()
+        if hostname == "api.deepseek.com":
+            schema_instruction = (
+                "Return only valid JSON matching this JSON Schema: "
+                + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+            )
+            system_message = next(
+                (message for message in wire_messages if message["role"] == "system"),
+                None,
+            )
+            if system_message is None:
+                wire_messages.insert(
+                    0,
+                    {"role": "system", "content": schema_instruction},
+                )
+            else:
+                system_message["content"] += f"\n{schema_instruction}"
+            response_format: dict[str, Any] = {"type": "json_object"}
+        else:
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "wiki_ingest",
                     "strict": True,
                     "schema": dict(schema),
                 },
-            },
+            }
+        body: dict[str, Any] = {
+            "model": profile.model_name,
+            "messages": wire_messages,
+            "temperature": options.temperature,
+            "stream": False,
+            "response_format": response_format,
         }
         if options.max_tokens is not None:
             body["max_tokens"] = options.max_tokens
+        if hostname == "api.deepseek.com":
+            body["thinking"] = {"type": "disabled"}
         response = await self._request(
             "POST",
             f"{self.api_base_url(profile)}/chat/completions",
