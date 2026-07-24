@@ -188,13 +188,7 @@ function render() {
       renderedFocusNode &&
       (renderedFocusNode.id === source.id ||
         renderedFocusNode.id === target.id);
-    const sourceDistance = distances?.get(source.id) ?? Infinity;
-    const targetDistance = distances?.get(target.id) ?? Infinity;
-    const outerDistance = Math.max(sourceDistance, targetDistance);
-    let focusedOpacity = 0;
-    if (directlyConnected) focusedOpacity = 0.92;
-    else if (outerDistance <= 1) focusedOpacity = 0.18;
-    else if (outerDistance <= 2) focusedOpacity = 0.07;
+    const focusedOpacity = directlyConnected ? 0.92 : 0.09;
     const opacity = renderedFocusNode
       ? 0.3 + (focusedOpacity - 0.3) * focusBlend
       : 0.3;
@@ -216,9 +210,7 @@ function render() {
     const radius = nodeRadius(node) * Math.sqrt(1 / camera.scale) * camera.scale;
     const distance = distances?.get(node.id) ?? Infinity;
     const active = node === renderedFocusNode;
-    let focusedOpacity = 0;
-    if (distance <= 1) focusedOpacity = 1;
-    else if (distance === 2) focusedOpacity = 0.2;
+    const focusedOpacity = distance <= 1 ? 1 : 0.18;
     const opacity = renderedFocusNode
       ? 1 + (focusedOpacity - 1) * focusBlend
       : 1;
