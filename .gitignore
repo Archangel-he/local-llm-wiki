@@ -1,3 +1,5 @@
+.understand-anything/
+
 __pycache__/
 .venv*/
 *.py[cod]
@@ -7,10 +9,15 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-.env
 *.egg
+.env
+*.env.local
+*.env.*.local
 dist/
 node_modules/
+frontend/playwright-report/
+frontend/test-results/
+frontend/coverage/
 .DS_Store
 *.log
 *.db

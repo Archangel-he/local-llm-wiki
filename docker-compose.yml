@@ -28,6 +28,10 @@ services:
   api:
     build:
       context: ./backend
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment:
       DATABASE_URL: postgresql+psycopg://wiki:wiki@postgres:5432/wiki
       REDIS_URL: redis://redis:6379/0
@@ -42,6 +46,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/api', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   worker:
     build:
@@ -61,6 +75,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      api:
+        condition: service_healthy
 
   gateway:
     build:
@@ -69,7 +85,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
