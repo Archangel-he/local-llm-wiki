@@ -16,12 +16,27 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     job_max_attempts: int = 3
     session_secret: str = "change-me-in-production"
+    default_user_email: str = "default-user@local.invalid"
+    default_user_display_name: str = "Default User"
+    default_workspace_name: str = "Default Workspace"
+    default_workspace_slug: str = "default"
+    default_llm_profile_key: str = "mock-default"
+    mac_qwen36_enabled: bool = False
+    mac_qwen36_base_url: str = "http://host.docker.internal:30000/v1"
+    mac_qwen36_model: str = "qwen36-aggressive-q4km"
+    spark_qwen36_enabled: bool = False
+    spark_qwen36_base_url: str = "http://spark-tunnel:30000/v1"
+    spark_qwen36_model: str = "qwen36-aggressive-q4km"
 
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

@@ -82,6 +82,16 @@ jobs:
           DATABASE_URL: postgresql+psycopg://wiki:wiki@localhost:5432/wiki
           REDIS_URL: redis://localhost:6379/0
 
+      - name: Run backend tests
+        working-directory: ./backend
+        run: pytest -v
+        env:
+          DATABASE_URL: postgresql+psycopg://wiki:wiki@localhost:5432/wiki
+          REDIS_URL: redis://localhost:6379/0
+          REDIS_TEST_URL: redis://localhost:6379/15
+          LOCAL_STORAGE_PATH: ${{ runner.temp }}/local-llm-wiki-storage
+          LLM_PROVIDER: mock
+
   frontend-checks:
     runs-on: ubuntu-latest
     steps:
@@ -113,7 +123,7 @@ jobs:
 
       - name: Install Playwright
         working-directory: ./frontend
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps msedge
 
       - name: End-to-end tests
         working-directory: ./frontend

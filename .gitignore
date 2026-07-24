@@ -1,8 +1,14 @@
 .understand-anything/
 
 __pycache__/
+.venv*/
 *.py[cod]
 *.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.egg
 .env
 *.env.local
@@ -17,3 +23,4 @@ frontend/coverage/
 *.db
 storage/
 *.sqlite3
+mvp0-c-against-main.patch

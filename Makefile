@@ -1,5 +1,5 @@
 .PHONY: help up down build migrate seed init lint test-unit \
-	frontend-install frontend-lint frontend-test frontend-build test-e2e \
+	test-integration frontend-install frontend-lint frontend-test frontend-build test-e2e \
 	verify-services verify-mvp0 logs clean
 
 PNPM := corepack pnpm
@@ -27,7 +27,11 @@ init: migrate seed ## Run migrations + seed
 
 test-unit: ## Run backend unit tests (requires compose running)
 	docker compose exec api pip install -r dev-requirements.txt -q
-	docker compose exec api python -m pytest tests/ -v
+	docker compose exec api python -m pytest tests/ -m "not integration" -v
+
+test-integration: ## Run PostgreSQL and Redis integration tests
+	docker compose exec api pip install -r dev-requirements.txt -q
+	docker compose exec -e REDIS_TEST_URL=redis://redis:6379/15 api python -m pytest tests/ -m integration -v
 
 lint: ## Run Python linting
 	docker compose exec api pip install -r dev-requirements.txt -q
@@ -67,7 +71,11 @@ verify-services: ## Verify the running Compose stack
 	@echo "5. Checking database is migrated..."
 	@docker compose exec api alembic upgrade head > /dev/null
 	@echo "6. Checking seed data exists..."
-	@docker compose exec api python -c "from sqlalchemy import text; from app.database import SessionLocal; db=SessionLocal(); print('seeded' if db.execute(text('SELECT 1 FROM users LIMIT 1')).fetchone() else 'missing')" | grep -q "seeded" && echo "PASS: default user exists" || (docker compose exec api python -m app.seed && echo "PASS: seeded")
+	@docker compose exec api python -m app.seed
+	@docker compose exec api python -c "from app.database import SessionLocal; from app.seed import DEFAULT_USER_ID,DEFAULT_WORKSPACE_ID,DEFAULT_MOCK_PROFILE_ID; from app.models import User,Workspace,ModelProfile; db=SessionLocal(); assert db.get(User,DEFAULT_USER_ID); assert db.get(Workspace,DEFAULT_WORKSPACE_ID); p=db.get(ModelProfile,DEFAULT_MOCK_PROFILE_ID); assert p and p.credential_ciphertext is None; print('PASS: default data is present and credential-free')"
+	@echo "7. Running backend unit and integration tests..."
+	@docker compose exec api pip install -r dev-requirements.txt -q
+	@docker compose exec api python -m pytest tests -v
 	@echo "=== MVP 0 Gate PASSED ==="
 
 verify-mvp0: frontend-lint frontend-test frontend-build test-e2e verify-services ## Run the full MVP 0 gate
