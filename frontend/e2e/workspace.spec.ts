@@ -15,7 +15,9 @@ test.describe("Obsidian-style MVP 0 workspace", () => {
     await expect(page.getByTestId("wiki-panel")).toBeVisible();
     await expect(page.getByText("Graph view")).toBeVisible();
     await expect(
-      page.getByTestId("sigma-canvas").locator("canvas").first(),
+      page
+        .frameLocator('[data-testid="graph-repro-frame"]')
+        .locator("#graph"),
     ).toBeVisible();
     await expect(page.getByTestId("graph-panel")).toHaveAttribute(
       "data-node-count",
@@ -144,9 +146,11 @@ test.describe("Obsidian-style MVP 0 workspace", () => {
     await page.getByRole("button", { name: "缩小" }).click();
     await page.getByRole("button", { name: "重置视图" }).click();
     await page.getByRole("button", { name: "打开图谱设置" }).click();
-    await page.getByRole("button", { name: "Animate" }).click();
+    await page.getByRole("button", { name: "Reheat layout" }).click();
     await expect(
-      page.getByTestId("sigma-canvas").locator("canvas").first(),
+      page
+        .frameLocator('[data-testid="graph-repro-frame"]')
+        .locator("#graph"),
     ).toBeVisible();
   });
 });

@@ -31,11 +31,7 @@ interface GraphWorkspaceProps {
 }
 
 interface NodeMotion {
-  targetX: number;
-  targetY: number;
   targetSize: number;
-  velocityX: number;
-  velocityY: number;
   velocitySize: number;
   delayUntil: number;
 }
@@ -49,6 +45,12 @@ interface InteractionState {
   dragging: string | null;
 }
 
+interface SimulationFrame {
+  ids: string[];
+  buffer: ArrayBuffer;
+  alpha: number;
+}
+
 const groupColors = {
   source: "#7b6fe3",
   entity: "#5d83c7",
@@ -56,12 +58,33 @@ const groupColors = {
   question: "#c17b63",
 };
 
+const hoverPurple = "#7c6ee6";
+const neighborGray = "#4b4b50";
+
+const layoutScale = 100;
 const finalPositions = Object.fromEntries(
   graphNodes.map((node) => [
     node.id,
-    { x: node.x, y: node.y, size: node.size },
+    {
+      x: node.x * layoutScale,
+      y: node.y * layoutScale,
+      size: node.size,
+    },
   ]),
 );
+
+function simulationForces(
+  centerForce: number,
+  repelForce: number,
+  linkDistance: number,
+) {
+  return {
+    centerStrength: 0.04 + centerForce * 0.06,
+    repelStrength: 450 + repelForce * 1100,
+    linkStrength: 1,
+    linkDistance: 100 + linkDistance * 160,
+  };
+}
 
 function mixColor(from: string, to: string, amount: number) {
   const start = [1, 3, 5].map((index) =>
@@ -77,6 +100,13 @@ function mixColor(from: string, to: string, amount: number) {
         .padStart(2, "0"),
     )
     .join("")}`;
+}
+
+function withOpacity(color: string, opacity: number) {
+  const channels = [1, 3, 5].map((index) =>
+    Number.parseInt(color.slice(index, index + 2), 16),
+  );
+  return `rgba(${channels.join(", ")}, ${Math.max(0, Math.min(1, opacity))})`;
 }
 
 function Toggle({
@@ -133,8 +163,10 @@ export function GraphWorkspace({
   onToggleMaximize,
 }: GraphWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const reproFrameRef = useRef<HTMLIFrameElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const rendererRef = useRef<Sigma | null>(null);
+  const simulationWorkerRef = useRef<Worker | null>(null);
   const motionsRef = useRef<Record<string, NodeMotion>>({});
   const frameRef = useRef<number | null>(null);
   const previousTimeRef = useRef(0);
@@ -147,10 +179,15 @@ export function GraphWorkspace({
     dragging: null,
   });
   const renderControlsRef = useRef({
-    nodeScale: 1.15,
+    nodeScale: 0.7,
     edgeScale: 1.15,
     showOrphans: true,
     localOnly: false,
+  });
+  const simulationControlsRef = useRef({
+    centerForce: 1,
+    repelForce: 0.58,
+    linkDistance: 0.52,
   });
   const previousSelectionRef = useRef(selectedPageId);
   const ensureAnimationRef = useRef<() => void>(() => undefined);
@@ -161,9 +198,12 @@ export function GraphWorkspace({
   );
   const [showOrphans, setShowOrphans] = useState(true);
   const [showArrows, setShowArrows] = useState(false);
-  const [nodeScale, setNodeScale] = useState(1.15);
+  const [nodeScale, setNodeScale] = useState(0.7);
   const [edgeScale, setEdgeScale] = useState(1.15);
-  const [centerForce, setCenterForce] = useState(1);
+  const [centerForce, setCenterForce] = useState(0.1);
+  const [repelForce, setRepelForce] = useState(1000);
+  const [linkStrength, setLinkStrength] = useState(1);
+  const [linkDistance, setLinkDistance] = useState(180);
   const [localOnly, setLocalOnly] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<string | null>(null);
   const reducedMotion =
@@ -179,44 +219,25 @@ export function GraphWorkspace({
     });
   };
 
+  const updateReproForce = useCallback((id: string, value: number) => {
+    const input = reproFrameRef.current?.contentDocument?.getElementById(
+      id,
+    ) as HTMLInputElement | null;
+    if (!input) return;
+    input.value = String(value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, []);
+
+  const triggerReproAction = useCallback((id: "reheat" | "reset") => {
+    const button = reproFrameRef.current?.contentDocument?.getElementById(
+      id,
+    ) as HTMLButtonElement | null;
+    button?.click();
+  }, []);
+
   const replayLayout = useCallback(() => {
-    const graph = graphRef.current;
-    const renderer = rendererRef.current;
-    if (!graph || !renderer) return;
-
-    const now = window.performance.now();
-    graphNodes.forEach((node, index) => {
-      const target = finalPositions[node.id];
-      const currentX = graph.getNodeAttribute(node.id, "x") as number;
-      const currentY = graph.getNodeAttribute(node.id, "y") as number;
-      graph.mergeNodeAttributes(node.id, {
-        x: currentX * 0.18,
-        y: currentY * 0.18,
-        size: 2.2,
-      });
-      motionsRef.current[node.id] = {
-        targetX: target.x * centerForce,
-        targetY: target.y * centerForce,
-        targetSize: target.size,
-        velocityX: 0,
-        velocityY: 0,
-        velocitySize: 0,
-        delayUntil: reducedMotion ? 0 : now + index * 58,
-      };
-    });
-
-    const camera = renderer.getCamera();
-    if (reducedMotion) {
-      camera.animatedReset({ duration: 0 });
-    } else {
-      camera.setState({ x: 0.5, y: 0.5, ratio: 0.82 });
-      camera.animate(
-        { x: 0.5, y: 0.5, ratio: 1.16 },
-        { duration: 920, easing: "cubicOut" },
-      );
-    }
-    ensureAnimationRef.current();
-  }, [centerForce, reducedMotion]);
+    triggerReproAction("reheat");
+  }, [triggerReproAction]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -224,24 +245,19 @@ export function GraphWorkspace({
     const graph = new Graph();
     const now = window.performance.now();
     graphNodes.forEach((node, index) => {
-      const startX = reducedMotion ? node.x : node.x * 0.08;
-      const startY = reducedMotion ? node.y : node.y * 0.08;
+      const target = finalPositions[node.id];
       graph.addNode(node.id, {
         label: node.label,
         pageId: node.pageId,
-        x: startX,
-        y: startY,
+        x: reducedMotion ? target.x : target.x * 0.18,
+        y: reducedMotion ? target.y : target.y * 0.18,
         size: reducedMotion ? node.size : 2.2,
         color: groupColors[node.type],
         baseColor: groupColors[node.type],
         baseSize: node.size,
       });
       motionsRef.current[node.id] = {
-        targetX: node.x,
-        targetY: node.y,
         targetSize: node.size,
-        velocityX: 0,
-        velocityY: 0,
         velocitySize: 0,
         delayUntil: reducedMotion ? 0 : now + index * 58,
       };
@@ -285,37 +301,50 @@ export function GraphWorkspace({
       const orphan = graph.degree(node) === 0;
       const isSelected = node === interaction.selected;
       const isHovered = node === interaction.hovered;
-      const connectedToHover =
+      const isHoverNeighbor =
         interaction.hovered !== null &&
-        (node === interaction.hovered ||
-          graph.areNeighbors(node, interaction.hovered));
+        node !== interaction.hovered &&
+        graph.areNeighbors(node, interaction.hovered);
+      const connectedToHover = isHovered || isHoverNeighbor;
       const connectedToSelection =
         interaction.selected !== null &&
         (node === interaction.selected ||
           graph.areNeighbors(node, interaction.selected));
-      const dimmedByHover =
+      const hiddenByHover =
         interaction.hovered !== null && !connectedToHover;
       const hiddenByLocal =
         controls.localOnly &&
         interaction.selected !== null &&
         !connectedToSelection;
-      const dim = dimmedByHover ? interaction.hoverAmount * 0.78 : 0;
+      const baseColor = data.color;
+      const hoverColor = isHovered
+        ? mixColor(baseColor, hoverPurple, interaction.hoverAmount)
+        : isHoverNeighbor
+          ? mixColor(baseColor, neighborGray, interaction.hoverAmount)
+          : withOpacity(baseColor, 1 - interaction.hoverAmount);
       return {
         ...data,
-        color: mixColor(data.color, "#dddde1", dim),
-        forceLabel: true,
-        hidden: (!controls.showOrphans && orphan) || hiddenByLocal,
-        highlighted: isSelected || interaction.dragging === node,
+        color: hoverColor,
+        forceLabel: connectedToHover || interaction.hovered === null,
+        hidden:
+          (!controls.showOrphans && orphan) ||
+          hiddenByLocal ||
+          (hiddenByHover && interaction.hoverAmount > 0.9),
+        highlighted:
+          interaction.dragging === node ||
+          (isSelected && interaction.hovered === null),
         label:
-          dimmedByHover && interaction.hoverAmount > 0.88
+          hiddenByHover && interaction.hoverAmount > 0.12
             ? ""
             : data.label,
         size:
           data.size *
           controls.nodeScale *
-          (isHovered ? 1 + interaction.hoverAmount * 0.2 : 1) *
-          (isSelected ? 1 + interaction.selectedPulse * 0.08 : 1),
-        zIndex: isHovered || isSelected ? 3 : connectedToHover ? 2 : 1,
+          (isHovered ? 1 + interaction.hoverAmount * 0.14 : 1) *
+          (isSelected && interaction.hovered === null
+            ? 1 + interaction.selectedPulse * 0.08
+            : 1),
+        zIndex: isHovered || isSelected ? 3 : isHoverNeighbor ? 2 : 1,
       };
     });
     renderer.setSetting("edgeReducer", (edge, data) => {
@@ -332,17 +361,22 @@ export function GraphWorkspace({
       const hiddenByLocal = controls.localOnly && !touchesSelection;
       return {
         ...data,
-        color:
-          interaction.hovered && !touchesHover
-            ? mixColor("#a8a8ad", "#e5e5e8", interaction.hoverAmount)
-            : touchesHover
-              ? "#7469d8"
-              : "#a8a8ad",
-        hidden: hiddenByLocal,
+        color: touchesHover
+          ? mixColor("#a8a8ad", hoverPurple, interaction.hoverAmount)
+          : interaction.hovered
+            ? withOpacity("#a8a8ad", 1 - interaction.hoverAmount)
+            : "#a8a8ad",
+        hidden:
+          hiddenByLocal ||
+          Boolean(
+            interaction.hovered &&
+              !touchesHover &&
+              interaction.hoverAmount > 0.9,
+          ),
         size:
           data.size *
           controls.edgeScale *
-          (touchesHover ? 1 + interaction.hoverAmount * 0.8 : 1),
+          (touchesHover ? 1 + interaction.hoverAmount * 0.2 : 1),
         zIndex: touchesHover ? 2 : 1,
       };
     });
@@ -364,40 +398,21 @@ export function GraphWorkspace({
           return;
         }
 
-        const x = graph.getNodeAttribute(node, "x") as number;
-        const y = graph.getNodeAttribute(node, "y") as number;
         const size = graph.getNodeAttribute(node, "size") as number;
-        const isDragged = interactionRef.current.dragging === node;
-        const stiffness = isDragged ? 0.22 : 0.105;
-        const damping = Math.pow(isDragged ? 0.62 : 0.72, delta);
-
-        motion.velocityX =
-          (motion.velocityX + (motion.targetX - x) * stiffness * delta) *
-          damping;
-        motion.velocityY =
-          (motion.velocityY + (motion.targetY - y) * stiffness * delta) *
-          damping;
         motion.velocitySize =
           (motion.velocitySize +
             (motion.targetSize - size) * 0.14 * delta) *
           Math.pow(0.68, delta);
 
-        const nextX = x + motion.velocityX * delta;
-        const nextY = y + motion.velocityY * delta;
         const nextSize = size + motion.velocitySize * delta;
         graph.mergeNodeAttributes(node, {
-          x: nextX,
-          y: nextY,
           size: nextSize,
         });
 
         const unsettled =
-          Math.abs(motion.targetX - nextX) > 0.00035 ||
-          Math.abs(motion.targetY - nextY) > 0.00035 ||
           Math.abs(motion.targetSize - nextSize) > 0.006 ||
-          Math.abs(motion.velocityX) > 0.0002 ||
-          Math.abs(motion.velocityY) > 0.0002;
-        if (unsettled || isDragged) active = true;
+          Math.abs(motion.velocitySize) > 0.0002;
+        if (unsettled) active = true;
       });
 
       const interaction = interactionRef.current;
@@ -428,8 +443,6 @@ export function GraphWorkspace({
           const motion = motionsRef.current[node];
           if (!motion) return;
           graph.mergeNodeAttributes(node, {
-            x: motion.targetX,
-            y: motion.targetY,
             size: motion.targetSize,
           });
         });
@@ -449,11 +462,13 @@ export function GraphWorkspace({
       interactionRef.current.hovered = node;
       interactionRef.current.hoverTarget = 1;
       containerRef.current?.classList.add("is-hovering-node");
+      containerRef.current?.setAttribute("data-hovered-node", node);
       ensureAnimation();
     });
     renderer.on("leaveNode", () => {
       interactionRef.current.hoverTarget = 0;
       containerRef.current?.classList.remove("is-hovering-node");
+      containerRef.current?.removeAttribute("data-hovered-node");
       ensureAnimation();
     });
     renderer.on("clickNode", ({ node }) => {
@@ -475,37 +490,64 @@ export function GraphWorkspace({
         .animatedReset({ duration: reducedMotion ? 0 : 560, easing: "cubicInOut" });
     });
 
-    renderer.on("downNode", ({ node, event }) => {
+    renderer.on("downNode", ({ node }) => {
       interactionRef.current.dragging = node;
-      const motion = motionsRef.current[node];
-      motion.velocityX = 0;
-      motion.velocityY = 0;
+      if (!renderer.getCustomBBox()) {
+        renderer.setCustomBBox(renderer.getBBox());
+      }
       graph.setNodeAttribute(node, "highlighted", true);
       containerRef.current?.classList.add("is-dragging-node");
+      containerRef.current?.setAttribute("data-dragged-node", node);
+      simulationWorkerRef.current?.postMessage({
+        alpha: 0.3,
+        alphaTarget: 0.3,
+        run: true,
+        forceNode: {
+          id: node,
+          x: graph.getNodeAttribute(node, "x") as number,
+          y: graph.getNodeAttribute(node, "y") as number,
+        },
+      });
+      ensureAnimation();
+    });
+    renderer.on("moveBody", ({ event }) => {
+      const dragged = interactionRef.current.dragging;
+      if (!dragged) return;
+      const position = renderer.viewportToGraph(event);
+      graph.mergeNodeAttributes(dragged, position);
+      simulationWorkerRef.current?.postMessage({
+        alpha: 0.3,
+        alphaTarget: 0.3,
+        run: true,
+        forceNode: {
+          id: dragged,
+          x: position.x,
+          y: position.y,
+        },
+      });
       event.preventSigmaDefault();
       event.original.preventDefault();
       event.original.stopPropagation();
       ensureAnimation();
     });
-    renderer.getMouseCaptor().on("mousemovebody", (event) => {
-      const dragged = interactionRef.current.dragging;
-      if (!dragged) return;
-      const position = renderer.viewportToGraph(event);
-      const motion = motionsRef.current[dragged];
-      motion.targetX = position.x;
-      motion.targetY = position.y;
-      motion.delayUntil = 0;
-      event.preventSigmaDefault();
-      event.original.preventDefault();
-      ensureAnimation();
-    });
-    renderer.getMouseCaptor().on("mouseup", () => {
+    const handleDragEnd = () => {
       const dragged = interactionRef.current.dragging;
       if (dragged) graph.removeNodeAttribute(dragged, "highlighted");
+      if (dragged) {
+        simulationWorkerRef.current?.postMessage({
+          alpha: 0.3,
+          alphaTarget: 0,
+          run: true,
+          forceNode: { id: dragged, x: null, y: null },
+        });
+      }
       interactionRef.current.dragging = null;
       containerRef.current?.classList.remove("is-dragging-node");
+      containerRef.current?.removeAttribute("data-dragged-node");
       ensureAnimation();
-    });
+    };
+    renderer.on("upNode", handleDragEnd);
+    renderer.on("upStage", handleDragEnd);
 
     if (!reducedMotion) {
       renderer.getCamera().setState({ x: 0.5, y: 0.5, ratio: 0.82 });
@@ -516,11 +558,62 @@ export function GraphWorkspace({
           { duration: 920, easing: "cubicOut" },
         );
     }
+
+    const simulationWorker = reducedMotion
+      ? null
+      : new Worker("/obsidian-graph-repro/sim-worker.js", {
+          type: "module",
+          name: "Graph Simulation",
+        });
+    if (simulationWorker) {
+      simulationWorkerRef.current = simulationWorker;
+      simulationWorker.addEventListener(
+        "message",
+        (event: MessageEvent<SimulationFrame>) => {
+          const { ids, buffer } = event.data;
+          const coordinates = new Float32Array(buffer);
+
+          ids.forEach((node, index) => {
+            if (!graph.hasNode(node)) return;
+            graph.mergeNodeAttributes(node, {
+              x: coordinates[index * 2],
+              y: coordinates[index * 2 + 1],
+            });
+          });
+        },
+      );
+      simulationWorker.addEventListener("error", (event) => {
+        console.error("Graph simulation worker failed", event.message);
+      });
+      simulationWorker.postMessage({
+        nodes: graphNodes.map((node) => ({
+          id: node.id,
+          x: graph.getNodeAttribute(node.id, "x") as number,
+          y: graph.getNodeAttribute(node.id, "y") as number,
+        })),
+        links: graphEdges.map(
+          (edge) => [edge.source, edge.target] as [string, string],
+        ),
+        forces: simulationForces(
+          simulationControlsRef.current.centerForce,
+          simulationControlsRef.current.repelForce,
+          simulationControlsRef.current.linkDistance,
+        ),
+        alpha: 1,
+        alphaTarget: 0,
+        run: true,
+      });
+    }
     ensureAnimation();
 
     return () => {
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      simulationWorker?.terminate();
+      if (simulationWorkerRef.current === simulationWorker) {
+        simulationWorkerRef.current = null;
       }
       renderer.kill();
       rendererRef.current = null;
@@ -528,6 +621,21 @@ export function GraphWorkspace({
       ensureAnimationRef.current = () => undefined;
     };
   }, [onSelectPage, reducedMotion]);
+
+  useEffect(() => {
+    simulationControlsRef.current = {
+      centerForce,
+      repelForce,
+      linkDistance,
+    };
+    if (reducedMotion) return;
+    simulationWorkerRef.current?.postMessage({
+      forces: simulationForces(centerForce, repelForce, linkDistance),
+      alpha: 0.3,
+      alphaTarget: 0,
+      run: true,
+    });
+  }, [centerForce, linkDistance, reducedMotion, repelForce]);
 
   useEffect(() => {
     renderControlsRef.current = {
@@ -579,19 +687,6 @@ export function GraphWorkspace({
     );
   }, [reducedMotion, selectedPageId]);
 
-  useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph) return;
-    graphNodes.forEach((node) => {
-      const target = finalPositions[node.id];
-      const motion = motionsRef.current[node.id];
-      motion.targetX = target.x * centerForce;
-      motion.targetY = target.y * centerForce;
-      motion.delayUntil = 0;
-    });
-    ensureAnimationRef.current();
-  }, [centerForce]);
-
   const zoom = (direction: "in" | "out") => {
     const camera = rendererRef.current?.getCamera();
     if (!camera) return;
@@ -616,12 +711,22 @@ export function GraphWorkspace({
       data-edge-count={graphEdges.length}
       aria-label="Knowledge graph"
     >
-      <div
-        ref={containerRef}
-        className="sigma-canvas"
-        data-testid="sigma-canvas"
-        aria-hidden="true"
-      />
+      <div className="sigma-canvas" data-testid="sigma-canvas">
+        <iframe
+          ref={reproFrameRef}
+          className="repro-graph-frame"
+          data-testid="graph-repro-frame"
+          src="/obsidian-graph-repro/index.html"
+          title="Obsidian graph animation reproduction"
+          onLoad={() => {
+            updateReproForce("node-size", nodeScale);
+            updateReproForce("center", centerForce);
+            updateReproForce("repel", repelForce);
+            updateReproForce("link-strength", linkStrength);
+            updateReproForce("link-distance", linkDistance);
+          }}
+        />
+      </div>
 
       {settingsOpen && (
         <aside className="graph-settings" aria-label="图谱设置">
@@ -682,11 +787,15 @@ export function GraphWorkspace({
               <span>Node size</span>
               <input
                 type="range"
-                min="0.7"
-                max="1.5"
+                min="0.45"
+                max="1.2"
                 step="0.05"
                 value={nodeScale}
-                onChange={(event) => setNodeScale(Number(event.target.value))}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setNodeScale(value);
+                  updateReproForce("node-size", value);
+                }}
               />
             </label>
             <label className="graph-range">
@@ -700,10 +809,6 @@ export function GraphWorkspace({
                 onChange={(event) => setEdgeScale(Number(event.target.value))}
               />
             </label>
-            <button className="animate-graph" type="button" onClick={replayLayout}>
-              <RefreshCcw />
-              Animate
-            </button>
           </SettingsGroup>
 
           <SettingsGroup
@@ -716,21 +821,80 @@ export function GraphWorkspace({
               <span>Center force</span>
               <input
                 type="range"
-                min="0.72"
-                max="1.28"
-                step="0.02"
+                min="0"
+                max="0.3"
+                step="0.01"
                 value={centerForce}
-                onChange={(event) => setCenterForce(Number(event.target.value))}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setCenterForce(value);
+                  updateReproForce("center", value);
+                }}
               />
             </label>
             <label className="graph-range">
               <span>Repel force</span>
-              <input type="range" min="0" max="1" step="0.05" defaultValue="0.58" />
+              <input
+                type="range"
+                min="100"
+                max="3000"
+                step="50"
+                value={repelForce}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setRepelForce(value);
+                  updateReproForce("repel", value);
+                }}
+              />
+            </label>
+            <label className="graph-range">
+              <span>Link strength</span>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={linkStrength}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setLinkStrength(value);
+                  updateReproForce("link-strength", value);
+                }}
+              />
             </label>
             <label className="graph-range">
               <span>Link distance</span>
-              <input type="range" min="0" max="1" step="0.05" defaultValue="0.52" />
+              <input
+                type="range"
+                min="50"
+                max="350"
+                step="5"
+                value={linkDistance}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setLinkDistance(value);
+                  updateReproForce("link-distance", value);
+                }}
+              />
             </label>
+            <div className="graph-force-actions">
+              <button
+                className="animate-graph"
+                type="button"
+                onClick={replayLayout}
+              >
+                <RefreshCcw />
+                Reheat layout
+              </button>
+              <button
+                className="animate-graph"
+                type="button"
+                onClick={() => triggerReproAction("reset")}
+              >
+                <Focus />
+                Reset positions
+              </button>
+            </div>
           </SettingsGroup>
         </aside>
       )}

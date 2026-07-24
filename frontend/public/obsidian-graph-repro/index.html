@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Obsidian Graph</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #ffffff;
+        color: #2f2f33;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow: hidden;
+      }
+
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        cursor: grab;
+        background: #ffffff;
+      }
+
+      canvas.dragging {
+        cursor: grabbing;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="graph"></canvas>
+
+    <div hidden aria-hidden="true">
+      <input id="node-size" type="range" min="0.45" max="1.2" step="0.05" value="0.7" />
+      <output for="node-size">0.70</output>
+      <input id="center" type="range" min="0" max="0.3" step="0.01" value="0.1" />
+      <output for="center">0.10</output>
+      <input id="repel" type="range" min="100" max="3000" step="50" value="1000" />
+      <output for="repel">1000</output>
+      <input id="link-strength" type="range" min="0" max="2" step="0.05" value="1" />
+      <output for="link-strength">1.00</output>
+      <input id="link-distance" type="range" min="50" max="350" step="5" value="180" />
+      <output for="link-distance">180</output>
+      <button id="reheat" type="button">Reheat layout</button>
+      <button id="reset" type="button">Reset positions</button>
+      <div id="status">Waiting for Worker...</div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
